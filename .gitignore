@@ -1,0 +1,5 @@
+**/.DS_Store
+/dataiku/python_scripts/table_metrics_compare/report/allure-results
+/dataiku/python_scripts/venv
+/.mypy_cache
+**/__pycache__

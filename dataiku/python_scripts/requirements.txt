@@ -1,0 +1,12 @@
+pytest
+allure-pytest
+sqlalchemy
+sqlalchemy-trino
+psycopg2-binary
+pytest-html
+pytest-md
+pandas
+boto3
+confluent-kafka
+thriftpy2
+thrift

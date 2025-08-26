@@ -1,0 +1,19 @@
+### Retrieves basic info and status for a scenario, as a ScenarioWithStatus object.
+GET http://localhost:28315/public/api/projects/COMPARES3/scenarios/COMPARE_S3/light
+Authorization: Basic dkuaps-IzJWpKI1UvAKiyWZ9sJzHXSIMNVVVMt7:
+Content-Type: application/json
+
+### Retrieves the “payload” of a scenario. This only makes sense for custom scenarios.
+GET http://localhost:28315/public/api/projects/COMPARES3/scenarios/COMPARE_S3/payload
+Authorization: Basic dkuaps-IzJWpKI1UvAKiyWZ9sJzHXSIMNVVVMt7:
+Content-Type: application/json
+
+### Retrieve the last runs of this scenario
+GET http://localhost:28315/public/api/projects/COMPARES3/scenarios/COMPARE_S3/get-last-runs?limit=1
+Authorization: Basic dkuaps-IzJWpKI1UvAKiyWZ9sJzHXSIMNVVVMt7:
+Content-Type: application/json
+
+### Poll scenario run
+GET http://localhost:28315/public/api/projects/COMPARES3/scenarios/COMPARE_S3/runs2025-08-15-10-21-16-661
+Authorization: Basic dkuaps-IzJWpKI1UvAKiyWZ9sJzHXSIMNVVVMt7:
+Content-Type: application/json
