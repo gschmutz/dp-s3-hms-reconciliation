@@ -1,0 +1,214 @@
+import select
+import boto3
+import os
+import hashlib
+import logging
+from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timezone
+from urllib.parse import urlparse
+from requests import Session, session
+from sqlalchemy import create_engine, select, text, Column, Integer, String, DateTime
+from sqlalchemy.orm import declarative_base, sessionmaker
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# will only be used when running inside a scenario in Dataiku
+try:
+    from dataiku.scenario import Scenario
+    # This will only succeed if running inside DSS
+    scenario = Scenario()
+except ImportError:
+    logger.info("Unable to setup dataiku scenario API due to import error")    
+    scenario = None
+ 
+# will only be used when running inside a scenario in Dataiku
+try:
+    import dataiku
+    # This will only succeed if running inside DSS
+    client = dataiku.api_client()
+except ImportError:
+    logger.info("Unable to setup dataiku client API due to import error")
+    client = None
+ 
+def get_param(name, default=None) -> str:
+    """
+    Retrieves the value of a parameter by name from the scenario variables if available,
+    otherwise from the environment variables.
+ 
+    Args:
+        name (str): The name of the parameter to retrieve.
+        default (Any, optional): The default value to return if the parameter is not found. Defaults to None.
+ 
+    Returns:
+        Any: The value of the parameter if found, otherwise the default value.
+    """
+    if scenario is not None:
+        return scenario.get_all_variables().get(name, default)
+    return os.getenv(name, default)
+ 
+def get_credential(name, default=None) -> str:
+    """
+    Retrieves the value of a secret credential by its name.
+    Args:
+        name (str): The key name of the credential to retrieve.
+        default (str, optional): The default value to return if the credential is not found. Defaults to None.
+    Returns:
+        str: The value of the credential if found, otherwise the default value.
+    """
+    if client is not None:
+        secrets = client.get_auth_info(with_secrets=True)["secrets"]
+        for secret in secrets:
+            if secret["key"] == name:
+                if "value" in secret:
+                    return secret["value"]
+                else:
+                    break
+    return default
+
+# Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
+FILTER_DATABASE = get_param('FILTER_DATABASE', "")
+FILTER_TABLES = get_param('FILTER_TABLES', "")
+
+NUMBER_OF_BUCKETS = int(get_param('NUMBER_OF_BUCKETS', "3"))
+HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
+
+HMS_DB_USER = get_credential('HMS_DB_USER', 'hive')
+HMS_DB_PASSWORD = get_credential('HMS_DB_PASSWORD', 'abc123!')
+HMS_DB_HOST = get_param('HMS_DB_HOST', 'hive-metastore-db')
+HMS_DB_PORT = get_param('HMS_DB_PORT', '5432')
+HMS_DB_DBNAME = get_param('HMS_DB_NAME', 'metastore_db')
+
+HMS_TRINO_USER = get_credential('HMS_TRINO_USER', 'trino')
+HMS_TRINO_PASSWORD = get_credential('HMS_TRINO_PASSWORD', '')
+HMS_TRINO_HOST = get_param('HMS_TRINO_HOST', 'localhost')
+HMS_TRINO_PORT = get_param('HMS_TRINO_PORT', '28082')
+HMS_TRINO_CATALOG = get_param('HMS_TRINO_CATALOG', 'minio')
+#HMS_TRINO_SCHEMA = get_param('HMS_TRINO_SCHEMA', 'flight_db')
+
+# Connect to MinIO or AWS S3
+# Read endpoint URL from environment variable, default to localhost MinIO
+S3_ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
+S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
+S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
+
+# Construct connection URLs
+hms_db_url = f'postgresql://{HMS_DB_USER}:{HMS_DB_PASSWORD}@{HMS_DB_HOST}:{HMS_DB_PORT}/{HMS_DB_DBNAME}'
+# Construct connection URLs
+hms_trino_url = f'trino://{HMS_TRINO_USER}:{HMS_TRINO_PASSWORD}@{HMS_TRINO_HOST}:{HMS_TRINO_PORT}/{HMS_TRINO_CATALOG}'
+
+# Setup connections to the metadatastore, either directly to postgresql or via trino
+if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
+    src_engine = create_engine(hms_db_url)
+else:
+    src_engine = create_engine(hms_trino_url)
+
+# Create S3 client configuration
+s3_config = {"service_name": "s3"}
+if S3_ENDPOINT_URL:
+    s3_config["endpoint_url"] = S3_ENDPOINT_URL
+
+s3 = boto3.client(**s3_config)
+
+Base = declarative_base()
+
+class S3Location(Base):
+    __tablename__ = 'users'  # maps to the "users" table in your database
+
+    table_id = Column(String, primary_key=True)
+    database_name = Column(String, nullable=False)
+    table_name = Column(String, nullable=False)
+    table_type = Column(String, nullable=False)
+    location = Column(String, nullable=False)
+    has_partitions = Column(String, nullable=False)
+    partition_count = Column(Integer, nullable=False)
+    row_num = Column(Integer, nullable=False)
+    bucket = Column(Integer, nullable=False)
+
+    def __repr__(self):
+        return f"<S3Location(database_name={self.database_name}, table_name='{self.table_name}', table_type='{self.table_type}', location='{self.location}', has_partitions='{self.has_partitions}', partition_count={self.partition_count}, row_num={self.row_num}, bucket={self.bucket})>"
+
+def get_s3_locations_with_buckets(number_of_buckets: int=0):
+    """
+    """
+
+    if src_engine.dialect.name == 'postgresql':
+        catalog_name = ""
+    else:
+        catalog_name = "hive_metastore_db."
+
+    with src_engine.connect() as conn:
+        Session = sessionmaker(bind=src_engine)
+        session = Session()
+
+        stmt = select(S3Location).from_statement(
+            text("""
+                SELECT
+                    r.*,
+                    (row_num % :bucket_size) + 1 as bucket
+                FROM
+                    (
+                    SELECT
+                        r.*,
+                        row_number() over (
+                        order by r.partition_count desc) as row_num
+                    FROM
+                        (
+                        SELECT
+                            CONCAT(d."NAME", '.', t."TBL_NAME") as table_id,
+                            d."NAME" as database_name,
+                            t."TBL_NAME" as table_name,
+                            t."TBL_TYPE" as table_type,
+                            s."LOCATION" as location,
+                            case
+                                when pk.has_partitions >= 1 then 'Y'
+                                else 'N'
+                            end as has_partitions,
+                            COUNT(p."PART_ID") as partition_count
+                        FROM
+                            public."TBLS" t
+                        JOIN public."DBS" d on
+                            t."DB_ID" = d."DB_ID"
+                        JOIN public."SDS" s on
+                            t."SD_ID" = s."SD_ID"
+                        LEFT JOIN (
+                            SELECT
+                                pk."TBL_ID",
+                                greatest(SIGN(COUNT(*)), 0) as has_partitions
+                            FROM
+                                public."PARTITION_KEYS" pk
+                            GROUP BY
+                                pk."TBL_ID") pk on
+                            t."TBL_ID" = pk."TBL_ID"
+                        left JOIN public."PARTITIONS" p on
+                            t."TBL_ID" = p."TBL_ID"
+                        GROUP BY
+                            d."NAME",
+                            t."TBL_NAME",
+                            t."TBL_TYPE",
+                            s."LOCATION",
+                            pk.has_partitions
+                ) r	
+                ) r
+                ORDER BY (row_num % :bucket_size) + 1
+            """)
+            ).params(bucket_size=number_of_buckets)
+        
+        s3_locations = session.execute(stmt).scalars().all()
+
+        return s3_locations
+
+with open(S3_LOCATION_LIST_OBJECT_NAME, "w") as f:
+    # Print CSV header
+    print("table_id,database_name,table_name,table_type,s3_location,has_partitions,partition_count,bucket", file=f)
+                
+    # Iterate through Hive tables
+    s3_locations = get_s3_locations_with_buckets(NUMBER_OF_BUCKETS)
+    print(f"Found {len(s3_locations)} S3 locations in Hive Metastore")
+    for s3_location in s3_locations:
+        print(f"{s3_location.table_id},{s3_location.database_name},{s3_location.table_name},{s3_location.table_type},{s3_location.location},{s3_location.has_partitions},{s3_location.partition_count},{s3_location.bucket}", file=f)
+
+# upload the file to S3 to make it available
+s3.upload_file(S3_LOCATION_LIST_OBJECT_NAME, S3_ADMIN_BUCKET, S3_LOCATION_LIST_OBJECT_NAME)

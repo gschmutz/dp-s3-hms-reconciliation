@@ -3,3 +3,6 @@
 /dataiku/python_scripts/venv
 /.mypy_cache
 **/__pycache__
+dataiku/python_scripts/s3_hms_compare/baseline_s3.csv
+/dataiku/python_scripts/s3_hms_compare/report
+dataiku/python_scripts/s3_locations_list/s3_locations.csv

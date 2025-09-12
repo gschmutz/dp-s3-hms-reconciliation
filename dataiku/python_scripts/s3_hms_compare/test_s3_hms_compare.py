@@ -1,3 +1,31 @@
+"""
+This module provides utilities and tests for reconciling partition metadata between S3 (MinIO/AWS) and Hive Metastore (HMS).
+It is designed to run both inside and outside Dataiku DSS scenarios, supporting dynamic configuration via environment variables or scenario variables.
+Key functionalities:
+- Securely retrieves configuration parameters and credentials from Dataiku or environment variables.
+- Connects to HMS via PostgreSQL or Trino, and to S3 via boto3.
+- Loads baseline partition data and S3 location lists from CSV files stored in S3.
+- Filters baseline data based on configured bucket, database, or table filters.
+- Queries HMS for partition counts and names for tables at specified S3 locations, up to a given timestamp.
+- Computes SHA256 fingerprints of partition name lists for integrity checks.
+- Provides pytest parameterized tests to compare partition counts and fingerprints between S3 baseline and HMS.
+Functions:
+- get_param(name, default): Retrieves a parameter value from scenario variables or environment variables.
+- get_credential(name, default): Retrieves a secret credential from Dataiku or returns a default.
+- get_s3_location_list(bucket): Loads and filters S3 location list from a CSV in S3.
+- get_s3_partitions_baseline(): Loads baseline partition data from a CSV in S3, filtered by bucket.
+- get_latest_timestamp(db_baseline): Returns the latest timestamp from the baseline DataFrame.
+- get_hms_partitions_count_and_partnames(s3_location, end_timestamp): Queries HMS for partition count and names for a given S3 location and timestamp.
+- quote_ident(name, dialect): Quotes SQL identifiers for the given dialect.
+Pytest tests:
+- test_partition_counts(s3_location): Asserts that partition counts in HMS match the S3 baseline.
+- test_partition_fingerprints(s3_location): Asserts that partition name fingerprints in HMS match the S3 baseline.
+Configuration:
+- Supports dynamic configuration for database access strategy, S3 endpoints, credentials, and filtering options.
+- Handles secure logging and error handling for missing or empty data.
+Intended usage:
+- Automated reconciliation of partition metadata between S3 and HMS, with integration into Dataiku DSS scenarios or standalone pytest runs.
+"""
 import hashlib
 import io
 import os
@@ -18,38 +46,62 @@ try:
     # This will only succeed if running inside DSS
     scenario = Scenario()
 except ImportError:
+    logger.info("Unable to setup dataiku scenario API due to import error")    
     scenario = None
-
+ 
 # will only be used when running inside a scenario in Dataiku
 try:
-    from dataiku.api_client import api_client
+    import dataiku
     # This will only succeed if running inside DSS
-    client = api_client()
+    client = dataiku.api_client()
 except ImportError:
+    logger.info("Unable to setup dataiku client API due to import error")
     client = None
-
+ 
 def get_param(name, default=None) -> str:
     """
-    Retrieves the value of a parameter by name from the scenario variables if available, 
+    Retrieves the value of a parameter by name from the scenario variables if available,
     otherwise from the environment variables.
-
+ 
     Args:
         name (str): The name of the parameter to retrieve.
         default (Any, optional): The default value to return if the parameter is not found. Defaults to None.
-
+ 
     Returns:
         Any: The value of the parameter if found, otherwise the default value.
     """
     if scenario is not None:
         return scenario.get_all_variables().get(name, default)
-    return os.getenv(name, default)
+    value = os.getenv(name, default)
 
+    logger.info(f"{name}: {value}")
+    return value
+ 
 def get_credential(name, default=None) -> str:
-
+    """
+    Retrieves the value of a secret credential by its name.
+    Args:
+        name (str): The key name of the credential to retrieve.
+        default (str, optional): The default value to return if the credential is not found. Defaults to None.
+    Returns:
+        str: The value of the credential if found, otherwise the default value.
+    """
     if client is not None:
         secrets = client.get_auth_info(with_secrets=True)["secrets"]
-        return secrets.get(name, default)
+        for secret in secrets:
+            if secret["key"] == name:
+                if "value" in secret:
+                    value = secret["value"]
+                    logger.info(f"{name}: *****")
+                    return value
+                else:
+                    break
     return default
+
+# Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
+FILTER_DATABASE = get_param('FILTER_DATABASE', "")
+FILTER_TABLE = get_param('FILTER_TABLE', "")
+FILTER_BUCKET = get_param('FILTER_BUCKET', "")
 
 # either postgresql or trino
 METASTORE_DB_ACCESS_STRATEGY = get_param('METASTORE_DB_ACCESS_STRATEGY', 'postgresql')
@@ -70,40 +122,20 @@ TRINO_SCHEMA = get_param('TRINO_SCHEMA', 'flight_db')
 # Connect to MinIO or AWS S3
 ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 
-BASELINE_BUCKET_NAME = get_param('S3_BASELINE_BUCKET', 'admin-bucket')
+S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
 BASELINE_OBJECT_KEY = get_param('S3_BASELINE_OBJECT_NAME', 'baseline_s3.csv')
-
-# Log all variable values (mask passwords)
-logger.info(f"METASTORE_DB_ACCESS_STRATEGY: {METASTORE_DB_ACCESS_STRATEGY}")
-
-logger.info(f"HMS_DB_USER: {HMS_DB_USER}")
-logger.info(f"HMS_DB_PASSWORD: {'***' if HMS_DB_PASSWORD else ''}")
-logger.info(f"HMS_DB_HOST: {HMS_DB_HOST}")
-logger.info(f"HMS_DB_PORT: {HMS_DB_PORT}")
-logger.info(f"HMS_DB_DBNAME: {HMS_DB_DBNAME}")
-
-logger.info(f"TRINO_USER: {TRINO_USER}")
-logger.info(f"TRINO_PASSWORD: {'***' if TRINO_PASSWORD else ''}")
-logger.info(f"TRINO_HOST: {TRINO_HOST}")
-logger.info(f"TRINO_PORT: {TRINO_PORT}")
-logger.info(f"TRINO_CATALOG: {TRINO_CATALOG}")
-logger.info(f"TRINO_SCHEMA: {TRINO_SCHEMA}")
-
-logger.info(f"ENDPOINT_URL: {ENDPOINT_URL}")
-logger.info(f"BASELINE_BUCKET_NAME: {BASELINE_BUCKET_NAME}")
-logger.info(f"BASELINE_OBJECT_KEY: {BASELINE_OBJECT_KEY}")
+S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
 
 # Construct connection URLs
-postgresql_url = f'postgresql://{HMS_DB_USER}:{HMS_DB_PASSWORD}@{HMS_DB_HOST}:{HMS_DB_PORT}/{HMS_DB_DBNAME}'
+hms_db_url = f'postgresql://{HMS_DB_USER}:{HMS_DB_PASSWORD}@{HMS_DB_HOST}:{HMS_DB_PORT}/{HMS_DB_DBNAME}'
 # Construct connection URLs
-trino_url = f'trino://{TRINO_USER}:{TRINO_PASSWORD}@{TRINO_HOST}:{TRINO_PORT}/{TRINO_CATALOG}/{TRINO_SCHEMA}'
+hms_trino_url = f'trino://{TRINO_USER}:{TRINO_PASSWORD}@{TRINO_HOST}:{TRINO_PORT}/{TRINO_CATALOG}/{TRINO_SCHEMA}'
 
 # Setup connections to the metadatastore, either directly to postgresql or via trino
 if METASTORE_DB_ACCESS_STRATEGY.lower() == 'postgresql':
-    src_engine = create_engine(postgresql_url)
+    src_engine = create_engine(hms_db_url)
 else:
-    src_engine = create_engine(trino_url)
-    # You can get the dialect name (db type) from the engine
+    src_engine = create_engine(hms_trino_url)
 
 logger.info(f"Connected using SQLAlchemy dialect: {src_engine.dialect.name}")
 
@@ -123,10 +155,58 @@ if ENDPOINT_URL:
 
 s3 = boto3.client(**s3_config)
 
-# Read the object
-response = s3.get_object(Bucket=BASELINE_BUCKET_NAME, Key=BASELINE_OBJECT_KEY)
+def get_s3_location_list(bucket: str) -> pd.DataFrame:
+    """
+    Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
+    Parameters:
+        bucket (str): The name of the S3 bucket to filter the locations by. If provided, only locations matching this bucket are returned.
+    Returns:
+        pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified bucket.
+    Raises:
+        ValueError: If the CSV file retrieved from S3 is empty.
+    Notes:
+        - The function expects the CSV file to be accessible via the global S3_ADMIN_BUCKET and S3_LOCATION_LIST_OBJECT_NAME.
+        - The function assumes the existence of a global `s3` client and required imports (`io`, `pandas as pd`).
+    """
+
+    # Read the object
+    response = s3.get_object(Bucket=S3_ADMIN_BUCKET, Key=S3_LOCATION_LIST_OBJECT_NAME)
+
+    # `response['Body'].read()` returns bytes, decode to string
+    csv_string = response['Body'].read().decode('utf-8')
+
+    # Debug: print the content
+    print(f"CSV content length: {len(csv_string)}")
+    print(f"First 100 chars: {csv_string[:100]}")
+
+    # Add error handling
+    if not csv_string.strip():
+        raise ValueError("CSV file is empty")
+
+    # Wrap the string in a StringIO buffer
+    csv_buffer = io.StringIO(csv_string)
+
+    s3_location_list = pd.read_csv(csv_buffer)
+    if bucket:
+        s3_location_list = s3_location_list[s3_location_list["bucket"] == int(bucket)]
+        print(s3_location_list)
+
+    return s3_location_list
 
 def get_s3_partitions_baseline():
+    """
+    Reads a CSV file from an S3 response object, decodes its content, and loads it into a pandas DataFrame.
+    The function expects a global variable `response` containing the S3 response with a 'Body' attribute.
+    It decodes the CSV content from bytes to string, checks for empty content, and parses it using pandas.
+    Returns:
+        pd.DataFrame: DataFrame containing the CSV data from S3.
+    Raises:
+        ValueError: If the CSV file is empty.
+    """
+
+    # Read the object
+    response = s3.get_object(Bucket=S3_ADMIN_BUCKET, Key=BASELINE_OBJECT_KEY)
+
     # `response['Body'].read()` returns bytes, decode to string
     csv_string = response['Body'].read().decode('utf-8')
 
@@ -142,17 +222,39 @@ def get_s3_partitions_baseline():
     csv_buffer = io.StringIO(csv_string)
 
     db_baseline = pd.read_csv(csv_buffer)
+    
+    s3_location_list = get_s3_location_list(FILTER_BUCKET)
+    db_baseline = db_baseline[db_baseline["table_id"].isin(s3_location_list["table_id"])]
+
     return db_baseline
 
-db_baseline = get_s3_partitions_baseline()
-
 def get_latest_timestamp(db_baseline):
-    
+    """
+    Returns the latest timestamp from the 'timestamp' column in the provided DataFrame.
+    Args:
+        db_baseline (pandas.DataFrame): DataFrame containing a 'timestamp' column.
+    Returns:
+        The maximum value found in the 'timestamp' column, representing the latest timestamp.
+    """
     latest_timestamp = db_baseline['timestamp'].max()
 
     return latest_timestamp
 
 def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int):
+    """
+    Retrieves the count and names of partitions for a Hive Metastore table located at the specified S3 location,
+    with partition creation times up to the given end timestamp.
+    The function adapts its SQL query based on the database dialect (PostgreSQL or others) to aggregate partition names.
+    It joins relevant Hive Metastore tables to filter by S3 location and returns a single result containing table name,
+    table type, partition count, and a comma-separated list of partition names.
+    Args:
+        s3_location (str): The S3 location of the Hive Metastore table to query.
+        end_timestamp (int): The upper bound (inclusive) for partition creation times (UNIX timestamp).
+    Returns:
+        Mapping or None: A mapping object with keys "TBL_NAME", "TBL_TYPE", "partition_count", and "part_names",
+        or None if no matching table is found.
+    """
+
     if src_engine.dialect.name == 'postgresql':
         part_names_expr = """string_agg(p."PART_NAME", ',' ORDER BY p."PART_NAME")"""
         catalog_name = ""
@@ -190,6 +292,9 @@ def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int)
 def quote_ident(name: str, dialect):
     return dialect.identifier_preparer.quote(name)
 
+# retrieve the baseline (optionally only for a certain bucket)
+db_baseline = get_s3_partitions_baseline()
+
 # Dynamically get the s3 locations from the baseline file
 s3_locations = db_baseline["s3_location"].tolist()
 max_timestamp = get_latest_timestamp(db_baseline)
@@ -197,7 +302,7 @@ partition_counts = db_baseline.set_index("s3_location")["partition_count"].to_di
 partition_fingerprint = db_baseline.set_index("s3_location")["fingerprint"].to_dict()
 
 @pytest.mark.parametrize("s3_location", s3_locations)
-def test_partition_counts(s3_location):
+def test_partition_counts(s3_location: str):
     partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp, )
     assert partition is not None, f"Expected a row for {s3_location} from HMS select query, but got None"
     expected_count: int = partition_counts[s3_location]
@@ -205,7 +310,7 @@ def test_partition_counts(s3_location):
     assert expected_count == actual_count, f"Partition count mismatch for {s3_location} in Hive Metastore: expected {expected_count} (S3), but got {actual_count} (HMS)"
 
 @pytest.mark.parametrize("s3_location", s3_locations)
-def test_partition_fingerprints(s3_location):
+def test_partition_fingerprints(s3_location: str):
     partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp)
     assert partition is not None, f"Expected a row for {s3_location} from HMS select query, but got None"
 

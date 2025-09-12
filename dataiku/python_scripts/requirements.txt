@@ -8,5 +8,8 @@ pytest-md
 pandas
 boto3
 confluent-kafka
+pyhive
 thriftpy2
 thrift
+thrift_sasl
+confluent-kafka

@@ -1,5 +1,25 @@
 # Dataiku
 
+## Init
+
+Create an evnironment with the following packages:
+
+```
+pytest
+pytest-html
+pytest-md
+allure-pytest
+sqlalchemy
+sqlalchemy-trino
+confluent-kafka
+requests
+boto3
+psycopg2-binary
+pandas
+thriftpy2
+thrift
+```
+
 ## compare\_s3_to\_hms
 
 Step Define Variables
