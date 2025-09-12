@@ -220,9 +220,6 @@ def get_actual_count(table: str, timestamp_column: Optional[str] = None, baselin
                 FROM {table}
                 '''
             )
- 
-            logger.info(f"Executing query: {query}")
-            count = conn.execute(query).scalar()
         else:
             query = text(
                 f'''
@@ -232,8 +229,13 @@ def get_actual_count(table: str, timestamp_column: Optional[str] = None, baselin
                 WHERE {timestamp_column} <= from_unixtime({baseline_timestamp} / 1000 + 1)
                 '''
             )
-            logger.info(f"Executing query: {query}")
+        
+        logger.info(f"Executing query: {query}")
+        try:
             count = conn.execute(query).scalar()
+        except Exception as e:
+            logger.error(f"Error executing query for table '{table}': {str(e)}")
+            count = None
     return count
  
 def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_schema: Optional[str] = None, filter_table: Optional[str] = None):
@@ -317,34 +319,36 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
                 # find the post_create_table_metric job
                 if data["steps"] and "post_create_table_metric" in data["steps"]:
                     post_create_table_metric_step: dict = data["steps"]["post_create_table_metric"]
-                    metric: dict = json.loads(post_create_table_metric_step["dp_controller_response_message"])
+
+                    if "job_outcome" in post_create_table_metric_step and post_create_table_metric_step["job_outcome"] == "SUCCESS":                   
+                        logger.info(f"Received message with post_create_table_metric_step: {post_create_table_metric_step["dp_controller_response_message"]}")
+
+                        metric: dict = json.loads(post_create_table_metric_step["job_exit_message"])
  
-                    logger.info(f"Received message with post_create_table_metric_step: {metric}")
- 
-                    # apply filters it set
-                    if filter_catalog and metric.get('catalog') != filter_catalog:
-                        continue
-                    if filter_schema and metric.get('schema') != filter_schema:
-                        continue
-                    if filter_table and metric.get('table_name') != filter_table:
-                        continue
- 
-                    # build key of dictionary with the fully qualified table name
-                    key = f"{metric.get('catalog')}.{metric.get('schema')}.{metric.get('table_name')}"
-                    timestamp = metric.get('event_time', 0)  # Assuming event_time is in milliseconds
- 
-                    # Store only the latest value based on timestamp
-                    if key:
-                        if key not in latest_values or timestamp > latest_values[key]['timestamp']:
-                            latest_values[key] = {
-                                'timestamp': timestamp,
-                                'timestamp_column': metric.get('timestamp_column', None),
-                                'count': metric.get('count', 0),
-                                'table_name': metric.get('table_name', key)
-                            }
-                            logger.info(f"Updated latest value for {key}: {latest_values[key]}")
-                        else:
-                            logger.info(f"Skipped older message for {key}: timestamp {timestamp} <= {latest_values[key]['timestamp']}")
+                        # apply filters it set
+                        if filter_catalog and metric.get('catalog') != filter_catalog:
+                            continue
+                        if filter_schema and metric.get('schema') != filter_schema:
+                            continue
+                        if filter_table and metric.get('table_name') != filter_table:
+                            continue
+    
+                        # build key of dictionary with the fully qualified table name
+                        key = f"{metric.get('catalog')}.{metric.get('schema')}.{metric.get('table_name')}"
+                        timestamp = metric.get('event_time', 0)  # Assuming event_time is in milliseconds
+    
+                        # Store only the latest value based on timestamp
+                        if key:
+                            if key not in latest_values or timestamp > latest_values[key]['timestamp']:
+                                latest_values[key] = {
+                                    'timestamp': timestamp,
+                                    'timestamp_column': metric.get('timestamp_column', None),
+                                    'count': metric.get('count', 0),
+                                    'table_name': metric.get('table_name', key)
+                                }
+                                logger.info(f"Updated latest value for {key}: {latest_values[key]}")
+                            else:
+                                logger.info(f"Skipped older message for {key}: timestamp {timestamp} <= {latest_values[key]['timestamp']}")
  
     except KeyboardInterrupt:
         logger.info("Stopping consumer.")

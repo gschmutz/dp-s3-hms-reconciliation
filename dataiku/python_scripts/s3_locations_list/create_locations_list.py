@@ -47,7 +47,10 @@ def get_param(name, default=None) -> str:
     """
     if scenario is not None:
         return scenario.get_all_variables().get(name, default)
-    return os.getenv(name, default)
+    value = os.getenv(name, default)
+
+    logger.info(f"{name}: {value}")
+    return value
  
 def get_credential(name, default=None) -> str:
     """
@@ -63,7 +66,9 @@ def get_credential(name, default=None) -> str:
         for secret in secrets:
             if secret["key"] == name:
                 if "value" in secret:
-                    return secret["value"]
+                    value = secret["value"]
+                    logger.info(f"{name}: *****")
+                    return value
                 else:
                     break
     return default
