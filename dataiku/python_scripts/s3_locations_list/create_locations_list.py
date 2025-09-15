@@ -122,7 +122,7 @@ Base = declarative_base()
 class S3Location(Base):
     __tablename__ = 'users'  # maps to the "users" table in your database
 
-    table_id = Column(String, primary_key=True)
+    fully_qualified_table_name = Column(String, primary_key=True)
     database_name = Column(String, nullable=False)
     table_name = Column(String, nullable=False)
     table_type = Column(String, nullable=False)
@@ -133,7 +133,7 @@ class S3Location(Base):
     bucket = Column(Integer, nullable=False)
 
     def __repr__(self):
-        return f"<S3Location(database_name={self.database_name}, table_name='{self.table_name}', table_type='{self.table_type}', location='{self.location}', has_partitions='{self.has_partitions}', partition_count={self.partition_count}, row_num={self.row_num}, bucket={self.bucket})>"
+        return f"<S3Location(fully_qualified_table_name={self.fully_qualified_table_name}, database_name={self.database_name}, table_name='{self.table_name}', table_type='{self.table_type}', location='{self.location}', has_partitions='{self.has_partitions}', partition_count={self.partition_count}, row_num={self.row_num}, bucket={self.bucket})>"
 
 def get_s3_locations_with_buckets(number_of_buckets: int=0):
     """
@@ -162,7 +162,7 @@ def get_s3_locations_with_buckets(number_of_buckets: int=0):
                     FROM
                         (
                         SELECT
-                            CONCAT(d."NAME", '.', t."TBL_NAME") as table_id,
+                            CONCAT(d."NAME", '.', t."TBL_NAME") as fully_qualified_table_name,
                             d."NAME" as database_name,
                             t."TBL_NAME" as table_name,
                             t."TBL_TYPE" as table_type,
@@ -207,13 +207,13 @@ def get_s3_locations_with_buckets(number_of_buckets: int=0):
 
 with open(S3_LOCATION_LIST_OBJECT_NAME, "w") as f:
     # Print CSV header
-    print("table_id,database_name,table_name,table_type,s3_location,has_partitions,partition_count,bucket", file=f)
+    print("fully_qualified_table_name,database_name,table_name,table_type,s3_location,has_partitions,partition_count,bucket", file=f)
                 
     # Iterate through Hive tables
     s3_locations = get_s3_locations_with_buckets(NUMBER_OF_BUCKETS)
     print(f"Found {len(s3_locations)} S3 locations in Hive Metastore")
     for s3_location in s3_locations:
-        print(f"{s3_location.table_id},{s3_location.database_name},{s3_location.table_name},{s3_location.table_type},{s3_location.location},{s3_location.has_partitions},{s3_location.partition_count},{s3_location.bucket}", file=f)
+        print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{s3_location.table_type},{s3_location.location},{s3_location.has_partitions},{s3_location.partition_count},{s3_location.bucket}", file=f)
 
 # upload the file to S3 to make it available
 s3.upload_file(S3_LOCATION_LIST_OBJECT_NAME, S3_ADMIN_BUCKET, S3_LOCATION_LIST_OBJECT_NAME)

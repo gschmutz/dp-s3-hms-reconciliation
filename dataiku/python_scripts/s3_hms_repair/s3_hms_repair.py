@@ -18,7 +18,10 @@ Run the script directly to perform repair operations based on the configured HMS
 """
 import sys
 import os
+import io
 import logging
+import boto3
+import pandas as pd
 from pyhive import hive
 from typing import Optional
 from sqlalchemy import create_engine, text
@@ -26,59 +29,64 @@ from sqlalchemy import create_engine, text
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
+ 
 # will only be used when running inside a scenario in Dataiku
 try:
     from dataiku.scenario import Scenario
     # This will only succeed if running inside DSS
     scenario = Scenario()
 except ImportError:
+    logger.info("Unable to setup dataiku scenario API due to import error")    
     scenario = None
-
+ 
 # will only be used when running inside a scenario in Dataiku
 try:
     import dataiku
     # This will only succeed if running inside DSS
-    client = api_client()
+    client = dataiku.api_client()
 except ImportError:
+    logger.info("Unable to setup dataiku client API due to import error")
     client = None
-
+ 
 def get_param(name, default=None) -> str:
     """
-    Retrieves the value of a parameter by name from the scenario variables if available, 
+    Retrieves the value of a parameter by name from the scenario variables if available,
     otherwise from the environment variables.
-
+ 
     Args:
         name (str): The name of the parameter to retrieve.
         default (Any, optional): The default value to return if the parameter is not found. Defaults to None.
-
+ 
     Returns:
         Any: The value of the parameter if found, otherwise the default value.
     """
     if scenario is not None:
         return scenario.get_all_variables().get(name, default)
     return os.getenv(name, default)
-
+ 
 def get_credential(name, default=None) -> str:
     """
-    Retrieve a credential value by its name from the secrets managed by the client.
-
+    Retrieves the value of a secret credential by its name.
     Args:
-        name (str): The name of the credential to retrieve.
+        name (str): The key name of the credential to retrieve.
         default (str, optional): The default value to return if the credential is not found. Defaults to None.
-
     Returns:
-        str: The credential value if found; otherwise, the default value.
+        str: The value of the credential if found, otherwise the default value.
     """
-
     if client is not None:
         secrets = client.get_auth_info(with_secrets=True)["secrets"]
-        return secrets.get(name, default)
+        for secret in secrets:
+            if secret["key"] == name:
+                if "value" in secret:
+                    return secret["value"]
+                else:
+                    break
     return default
 
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 FILTER_DATABASE = get_param('FILTER_DATABASE', None)
 FILTER_TABLE = get_param('FILTER_TABLE', None)
+FILTER_BUCKET = get_param('FILTER_BUCKET', "")
 
 # either postgresql or trino
 HMS_VERSION = get_param('HMS_VERSION', '3')                       # either "3" or "4"
@@ -101,22 +109,26 @@ HMS_TRINO_PASSWORD = get_credential('HMS_TRINO_PASSWORD', '')
 HMS_TRINO_HOST = get_param('HMS_TRINO_HOST', 'localhost')
 HMS_TRINO_PORT = get_param('HMS_TRINO_PORT', '28082')
 HMS_TRINO_CATALOG = get_param('HMS_TRINO_CATALOG', 'minio')
-HMS_TRINO_SCHEMA = get_param('HMS_TRINO_SCHEMA', 'flight_db')
 
 TRINO_USER = get_credential('TRINO_USER', 'trino')
 TRINO_PASSWORD = get_credential('TRINO_PASSWORD', '')
 TRINO_HOST = get_param('TRINO_HOST', 'localhost')
 TRINO_PORT = get_param('TRINO_PORT', '28082')
 TRINO_CATALOG = get_param('TRINO_CATALOG', 'minio')
-TRINO_SCHEMA = get_param('TRINO_SCHEMA', 'flight_db')
+
+# Connect to MinIO or AWS S3
+ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
+
+S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
+S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
 
 # Construct connection URLs
 hms_db_url = f'postgresql://{HMS_DB_USER}:{HMS_DB_PASSWORD}@{HMS_DB_HOST}:{HMS_DB_PORT}/{HMS_DB_DBNAME}'
 # Construct connection URLs
-hms_trino_url = f'trino://{HMS_TRINO_USER}:{HMS_TRINO_PASSWORD}@{HMS_TRINO_HOST}:{HMS_TRINO_PORT}/{HMS_TRINO_CATALOG}/{HMS_TRINO_SCHEMA}'
+hms_trino_url = f'trino://{HMS_TRINO_USER}:{HMS_TRINO_PASSWORD}@{HMS_TRINO_HOST}:{HMS_TRINO_PORT}/{HMS_TRINO_CATALOG}'
 
 # Construct connection URLs
-trino_url = f'trino://{TRINO_USER}:{TRINO_PASSWORD}@{TRINO_HOST}:{TRINO_PORT}/{TRINO_CATALOG}/{TRINO_SCHEMA}'
+trino_url = f'trino://{TRINO_USER}:{TRINO_PASSWORD}@{TRINO_HOST}:{TRINO_PORT}/{TRINO_CATALOG}'
 
 # Setup connections to the metadatastore, either directly to postgresql or via trino
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
@@ -127,16 +139,71 @@ else:
 
 trino_engine = create_engine(trino_url)
 
+# Create a session and S3 client
+s3 = boto3.client('s3')
+
+# Create S3 client configuration
+s3_config = {"service_name": "s3"}
+AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', None)
+AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', None)
+
+if AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY:
+    s3_config["aws_access_key_id"] = AWS_ACCESS_KEY
+    s3_config["aws_secret_access_key"] = AWS_SECRET_ACCESS_KEY
+if ENDPOINT_URL:
+    s3_config["endpoint_url"] = ENDPOINT_URL
+
+s3 = boto3.client(**s3_config)
+
+def get_s3_location_list(bucket: str) -> pd.DataFrame:
+    """
+    Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
+    Parameters:
+        bucket (str): The name of the S3 bucket to filter the locations by. If provided, only locations matching this bucket are returned.
+    Returns:
+        pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified bucket.
+    Raises:
+        ValueError: If the CSV file retrieved from S3 is empty.
+    Notes:
+        - The function expects the CSV file to be accessible via the global S3_ADMIN_BUCKET and S3_LOCATION_LIST_OBJECT_NAME.
+        - The function assumes the existence of a global `s3` client and required imports (`io`, `pandas as pd`).
+    """
+
+    # Read the object
+    response = s3.get_object(Bucket=S3_ADMIN_BUCKET, Key=S3_LOCATION_LIST_OBJECT_NAME)
+
+    # `response['Body'].read()` returns bytes, decode to string
+    csv_string = response['Body'].read().decode('utf-8')
+
+    # Debug: print the content
+    print(f"CSV content length: {len(csv_string)}")
+    print(f"First 100 chars: {csv_string[:100]}")
+
+    # Add error handling
+    if not csv_string.strip():
+        raise ValueError("CSV file is empty")
+
+    # Wrap the string in a StringIO buffer
+    csv_buffer = io.StringIO(csv_string)
+
+    s3_location_list = pd.read_csv(csv_buffer)
+    if bucket:
+        s3_location_list = s3_location_list[s3_location_list["bucket"] == int(bucket)]
+        print(s3_location_list)
+
+    return s3_location_list
+
 def get_tables(database_name: Optional[str] = None):
     if hms_engine.dialect.name == 'postgresql':
         catalog_name = ""
     else:
-        catalog_name = "hive_HMS_db."
+        catalog_name = f"{HMS_TRINO_CATALOG}."
 
     with hms_engine.connect() as conn:
         # TODO: Make end_timestamp optional and configure number of seconds to add
         sql = f"""
-            SELECT d."NAME" as "DATABASE_NAME",
+            SELECT CONCAT(d."NAME", '.', t."TBL_NAME") as fully_qualified_table_name, 
+               d."NAME" as "DATABASE_NAME",
                t."TBL_ID",
                t."CREATE_TIME",
                t."TBL_NAME",
@@ -148,31 +215,43 @@ def get_tables(database_name: Optional[str] = None):
             sql += f" WHERE d.\"NAME\" = '{database_name}'"
 
         result = conn.execute(text(sql))
-
-        return result.mappings().all()
+        df = pd.DataFrame(result.fetchall(), columns=result.keys())
+        return df
 
 def do_trino_repair(database_name: Optional[str] = None, filter_database: Optional[str] = None, filter_table: Optional[str] = None):
+    s3_location_list = get_s3_location_list(FILTER_BUCKET)
     all_tables = get_tables(database_name)
 
-    for table in all_tables:
+    filtered_tables = all_tables[all_tables["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
+
+    # Loop over each row in the filtered_tables DataFrame
+    for _, table in filtered_tables.iterrows():
+
+        table_name = table["TBL_NAME"]
+        database = table["DATABASE_NAME"]
+
         # apply filters it set
         if filter_database and database != filter_database:
             continue
         if filter_table and table_name != filter_table:
             continue
 
-        table_name = table["TBL_NAME"]
-        database = table["DATABASE_NAME"]
         with trino_engine.connect() as conn:
+            logger.info(f"Repairing table {database}.{table_name} via Trino")   
+
             conn.execute(text(f"call minio.system.sync_partition_metadata('{database}', '{table_name}', 'FULL')"))
 
 def do_hms_3x_repair(database_name: Optional[str] = None, filter_database: Optional[str] = None, filter_table: Optional[str] = None):
+    s3_location_list = get_s3_location_list(FILTER_BUCKET)
     all_tables = get_tables(database_name)
+
+    filtered_tables = all_tables[all_tables["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
 
     conn = hive.Connection(host=HMS_HOST, port=HMS_PORT, database="default")
 
-    for table in all_tables:
-        print (table)
+    # Loop over each row in the filtered_tables DataFrame
+    for _, table in filtered_tables.iterrows():
+
         table_name = table["TBL_NAME"]
         database = table["DATABASE_NAME"]
 

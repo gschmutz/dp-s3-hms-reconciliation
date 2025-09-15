@@ -224,7 +224,7 @@ def get_s3_partitions_baseline():
     db_baseline = pd.read_csv(csv_buffer)
     
     s3_location_list = get_s3_location_list(FILTER_BUCKET)
-    db_baseline = db_baseline[db_baseline["table_id"].isin(s3_location_list["table_id"])]
+    db_baseline = db_baseline[db_baseline["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
 
     return db_baseline
 

@@ -116,7 +116,7 @@ Base = declarative_base()
 class S3Location(Base):
     __tablename__ = 'users'  # maps to the "users" table in your database
 
-    table_id = Column(String, primary_key=True)
+    fully_qualified_table_name = Column(String, primary_key=True)
     database_name = Column(String, nullable=False)
     table_name = Column(String, nullable=False)
     table_type = Column(String, nullable=False)
@@ -146,7 +146,7 @@ def get_s3_locations_for_tables(filter_database=None, filter_tables=None):
 
         stmt = select(S3Location).from_statement(text(f"""
             SELECT
-                CONCAT(d."NAME", '.', t."TBL_NAME") as table_id,
+                CONCAT(d."NAME", '.', t."TBL_NAME") as fully_qualified_table_name,
                 d."NAME" as database_name,
                 t."TBL_NAME" as table_name,
                 t."TBL_TYPE" as table_type,
@@ -221,7 +221,7 @@ def get_partition_info(s3a_url):
 
 with open(S3_BASELINE_OBJECT_NAME, "w") as f:
     # Print CSV header
-    print("table_id,database_name,table_name,s3_location,partition_count,fingerprint,timestamp", file=f)
+    print("fully_qualified_table_name,database_name,table_name,s3_location,partition_count,fingerprint,timestamp", file=f)
                 
     s3_locations = get_s3_locations_for_tables(FILTER_DATABASE, FILTER_TABLES)
 
@@ -229,7 +229,7 @@ with open(S3_BASELINE_OBJECT_NAME, "w") as f:
     for s3_location in s3_locations:
         
         info = get_partition_info(f"{s3_location.location}")
-        print(f"{s3_location.table_id},{s3_location.database_name},{s3_location.table_name},{info['s3_location']},{info['partition_count']},{info['fingerprint']},{info['timestamp']}", file=f)
+        print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{info['s3_location']},{info['partition_count']},{info['fingerprint']},{info['timestamp']}", file=f)
 
 # upload the file to S3 to make it available
 s3.upload_file(S3_BASELINE_OBJECT_NAME, S3_ADMIN_BUCKET, S3_BASELINE_OBJECT_NAME)

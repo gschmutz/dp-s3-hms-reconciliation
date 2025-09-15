@@ -29,6 +29,8 @@ Usage:
 ------
 - Configure environment/scenario variables as needed.
 - Run the module with pytest to execute the tests and validate table metric reconciliation.
+
+TODO: run in batches
 """
 import pytest
 import os
