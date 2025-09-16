@@ -95,6 +95,7 @@ HMS_TRINO_CATALOG = get_param('HMS_TRINO_CATALOG', 'minio')
 
 # Connect to MinIO or AWS S3
 # Read endpoint URL from environment variable, default to localhost MinIO
+S3_UPLOAD_ENABLED = get_param('S3_UPLOAD_ENABLED', 'true').lower() in ['true', '1', 'yes']  
 S3_ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
 S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
@@ -216,4 +217,7 @@ with open(S3_LOCATION_LIST_OBJECT_NAME, "w") as f:
         print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{s3_location.table_type},{s3_location.location},{s3_location.has_partitions},{s3_location.partition_count},{s3_location.bucket}", file=f)
 
 # upload the file to S3 to make it available
-s3.upload_file(S3_LOCATION_LIST_OBJECT_NAME, S3_ADMIN_BUCKET, S3_LOCATION_LIST_OBJECT_NAME)
+if S3_UPLOAD_ENABLED:
+    logger.info(f"Uploading {S3_LOCATION_LIST_OBJECT_NAME} to s3://{S3_ADMIN_BUCKET}/{S3_LOCATION_LIST_OBJECT_NAME}")
+    
+    s3.upload_file(S3_LOCATION_LIST_OBJECT_NAME, S3_ADMIN_BUCKET, S3_LOCATION_LIST_OBJECT_NAME)
