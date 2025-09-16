@@ -23,7 +23,7 @@ Tests:
 Environment Variables / Scenario Variables:
 -------------------------------------------
 - FILTER_CATALOG, FILTER_SCHEMA, FILTER_TABLE: Optional filters for Kafka consumption.
-- TRINO_USER, TRINO_PASSWORD, TRINO_HOST, TRINO_PORT, TRINO_CATALOG, TRINO_SCHEMA: Trino connection details.
+- TRINO_USER, TRINO_PASSWORD, TRINO_HOST, TRINO_PORT, TRINO_CATALOG: Trino connection details.
 - KAFKA_BOOTSTRAP_SERVERS, KAFKA_SECURITY_PROTOCOL, KAFKA_SSL_CA_LOCATION, KAFKA_SSL_CERT_LOCATION, KAFKA_SSL_KEY_LOCATION, KAFKA_SSL_KEY_PASSWORD, KAFKA_SASL_USERNAME, KAFKA_SASL_PASSWORD, KAFKA_TOPIC_NAME: Kafka connection details.
 Usage:
 ------
@@ -37,7 +37,9 @@ import os
 import time
 import json
 import logging
- 
+import boto3
+import pandas as pd
+
 from sqlalchemy import create_engine,text
 from confluent_kafka import Consumer, KafkaError, TopicPartition, OFFSET_BEGINNING
 from confluent_kafka.deserializing_consumer import DeserializingConsumer
@@ -48,7 +50,7 @@ from typing import Optional
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
- 
+
 # will only be used when running inside a scenario in Dataiku
 try:
     from dataiku.scenario import Scenario
@@ -81,7 +83,10 @@ def get_param(name, default=None) -> str:
     """
     if scenario is not None:
         return scenario.get_all_variables().get(name, default)
-    return os.getenv(name, default)
+    value = os.getenv(name, default)
+
+    logger.info(f"{name}: {value}")
+    return value
  
 def get_credential(name, default=None) -> str:
     """
@@ -97,7 +102,9 @@ def get_credential(name, default=None) -> str:
         for secret in secrets:
             if secret["key"] == name:
                 if "value" in secret:
-                    return secret["value"]
+                    value = secret["value"]
+                    logger.info(f"{name}: *****")
+                    return value
                 else:
                     break
     return default
@@ -106,13 +113,14 @@ def get_credential(name, default=None) -> str:
 FILTER_CATALOG = get_param('FILTER_CATALOG', "")
 FILTER_SCHEMA = get_param('FILTER_SCHEMA', "")
 FILTER_TABLE = get_param('FILTER_TABLE', "")
+FILTER_BUCKET = get_param('FILTER_BUCKET', "")
  
 TRINO_USER = get_credential('TRINO_USER', 'trino')
 TRINO_PASSWORD = get_credential('TRINO_PASSWORD', '')
 TRINO_HOST = get_param('TRINO_HOST', 'localhost')
 TRINO_PORT = get_param('TRINO_PORT', '28082')
 TRINO_CATALOG = get_param('TRINO_CATALOG', 'minio')
-TRINO_SCHEMA = get_param('TRINO_SCHEMA', 'flight_db')
+TRINO_USE_SSL = get_param('TRINO_USE_SSL', 'true').lower() in ('true', '1', 't')
  
 KAFKA_BOOTSTRAP_SERVERS = get_param('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
 KAFKA_SECURITY_PROTOCOL = get_param('KAFKA_SECURITY_PROTOCOL', 'PLAINTEXT')
@@ -124,33 +132,35 @@ KAFKA_SASL_USERNAME = get_credential('KAFKA_SASL_USERNAME', '<USERNAME_NOT_SET>'
 KAFKA_SASL_PASSWORD = get_credential('KAFKA_SASL_PASSWORD', '<PASSWORD_NOT_SET>')
 KAFKA_TOPIC_NAME = get_param('KAFKA_TOPIC_NAME', 'dpraw_execution_status_log_v1')
  
-# Log all variable values (mask passwords)
-logger.info(f"FILTER_CATALOG: {FILTER_CATALOG}")
-logger.info(f"FILTER_SCHEMA: {FILTER_SCHEMA}")
-logger.info(f"FILTER_TABLE: {FILTER_TABLE}")
- 
-logger.info(f"TRINO_USER: {TRINO_USER}")
-logger.info(f"TRINO_PASSWORD: {'***' if TRINO_PASSWORD else ''}")
-logger.info(f"TRINO_HOST: {TRINO_HOST}")
-logger.info(f"TRINO_PORT: {TRINO_PORT}")
-logger.info(f"TRINO_CATALOG: {TRINO_CATALOG}")
-logger.info(f"TRINO_SCHEMA: {TRINO_SCHEMA}")
- 
-logger.info(f"KAFKA_BOOTSTRAP_SERVERS: {KAFKA_BOOTSTRAP_SERVERS}")
-logger.info(f"KAFKA_SECURITY_PROTOCOL: {KAFKA_SECURITY_PROTOCOL}")
-logger.info(f"KAFKA_SSL_CA_LOCATION: {KAFKA_SSL_CA_LOCATION}")
-logger.info(f"KAFKA_SSL_CERT_LOCATION: {KAFKA_SSL_CERT_LOCATION}")
-logger.info(f"KAFKA_SSL_KEY_LOCATION: {KAFKA_SSL_KEY_LOCATION}")
-logger.info(f"KAFKA_SSL_KEY_PASSWORD: {'***' if KAFKA_SSL_KEY_PASSWORD else ''}")
-logger.info(f"KAFKA_SASL_USERNAME: {KAFKA_SASL_USERNAME}")
-logger.info(f"KAFKA_SASL_PASSWORD: {'***' if KAFKA_SASL_PASSWORD else ''}")
-logger.info(f"KAFKA_TOPIC_NAME: {KAFKA_TOPIC_NAME}")
- 
+# Connect to MinIO or AWS S3
+ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
+S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
+BASELINE_OBJECT_KEY = get_param('S3_BASELINE_OBJECT_NAME', 'baseline_s3.csv')
+S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
+
 # Construct connection URLs
-trino_url = f'trino://{TRINO_USER}:{TRINO_PASSWORD}@{TRINO_HOST}:{TRINO_PORT}/{TRINO_CATALOG}/{TRINO_SCHEMA}?protocol=https&verify=false'
- 
+trino_url = f'trino://{TRINO_USER}:{TRINO_PASSWORD}@{TRINO_HOST}:{TRINO_PORT}/{TRINO_CATALOG}'
+if TRINO_USE_SSL:
+    trino_url = f'{trino_url}?protocol=https&verify=false'
+
 # Setup connections
 trino_engine = create_engine(trino_url)
+
+# Create a session and S3 client
+s3 = boto3.client('s3')
+
+# Create S3 client configuration
+s3_config = {"service_name": "s3"}
+AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', None)
+AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', None)
+
+if AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY:
+    s3_config["aws_access_key_id"] = AWS_ACCESS_KEY
+    s3_config["aws_secret_access_key"] = AWS_SECRET_ACCESS_KEY
+if ENDPOINT_URL:
+    s3_config["endpoint_url"] = ENDPOINT_URL
+
+s3 = boto3.client(**s3_config)
  
 # Kafka Consumer config
 consumer_conf_ssl = {
@@ -189,11 +199,48 @@ consumer_conf_plaintext = {
  
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
- 
+
+def get_s3_location_list(bucket: str) -> pd.DataFrame:
+    """
+    Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
+    Parameters:
+        bucket (str): The name of the S3 bucket to filter the locations by. If provided, only locations matching this bucket are returned.
+    Returns:
+        pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified bucket.
+    Raises:
+        ValueError: If the CSV file retrieved from S3 is empty.
+    Notes:
+        - The function expects the CSV file to be accessible via the global S3_ADMIN_BUCKET and S3_LOCATION_LIST_OBJECT_NAME.
+        - The function assumes the existence of a global `s3` client and required imports (`io`, `pandas as pd`).
+    """
+
+    # Read the object
+    response = s3.get_object(Bucket=S3_ADMIN_BUCKET, Key=S3_LOCATION_LIST_OBJECT_NAME)
+
+    # `response['Body'].read()` returns bytes, decode to string
+    csv_string = response['Body'].read().decode('utf-8')
+
+    # Debug: print the content
+    print(f"CSV content length: {len(csv_string)}")
+    print(f"First 100 chars: {csv_string[:100]}")
+
+    # Add error handling
+    if not csv_string.strip():
+        raise ValueError("CSV file is empty")
+
+    # Wrap the string in a StringIO buffer
+    csv_buffer = io.StringIO(csv_string)
+
+    s3_location_list = pd.read_csv(csv_buffer)
+    if bucket:
+        s3_location_list = s3_location_list[s3_location_list["bucket"] == int(bucket)]
+        print(s3_location_list)
+
+    return s3_location_list
+
 def get_baseline(table):
     return latest_values[table]
  
-
 def get_actual_count(table: str, timestamp_column: Optional[str] = None, baseline_timestamp: Optional[int] = None) -> int:
     """
     Retrieve the count of rows from a specified table over Trino, optionally filtered by a timestamp column and baseline timestamp.
@@ -240,7 +287,7 @@ def get_actual_count(table: str, timestamp_column: Optional[str] = None, baselin
             count = None
     return count
  
-def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_schema: Optional[str] = None, filter_table: Optional[str] = None):
+def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_schema: Optional[str] = None, filter_table: Optional[str] = None, filter_bucket: Optional[str] = None):
     """
     Initializes and returns the latest actual values for tables by consuming messages from a Kafka topic.
     This function reads String-serialized messages from a Kafka topic, optionally filtering by catalog, schema, and table name.
@@ -262,6 +309,9 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
     latest_values: dict[str, dict] = {}
     logger.info(f"running init_actual_values_from_kafka({filter_catalog},{filter_schema},{filter_table})")
  
+    # the list of S3 locations with the tables (potentially filtered by bucket)
+    s3_location_list = get_s3_location_list(filter_bucket)
+
     # read from kafka
     if KAFKA_SECURITY_PROTOCOL == 'SSL':
         consumer = Consumer(consumer_conf_ssl)
@@ -334,7 +384,13 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
                             continue
                         if filter_table and metric.get('table_name') != filter_table:
                             continue
-    
+
+                        # check if the table is in the list of S3 locations and if not skip it
+                        fully_qualified_table_name = f"{metric.get('schema')}.{metric.get('table_name')}"
+                        if fully_qualified_table_name not in s3_location_list["fully_qualified_table_name"].values:
+                            logger.info(f"Skipping table {fully_qualified_table_name} as it is not in the S3 location list")
+                            continue
+
                         # build key of dictionary with the fully qualified table name
                         key = f"{metric.get('catalog')}.{metric.get('schema')}.{metric.get('table_name')}"
                         timestamp = metric.get('event_time', 0)  # Assuming event_time is in milliseconds
@@ -360,9 +416,9 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
         consumer.close()
         logger.info(f"init_actual_values_from_kafka() completed. Found {len(latest_values)} tables: {list(latest_values.keys())}")
     return latest_values
- 
+
 # all the latest values from Kafka (applying a potential filer set via environment variables)
-latest_values = init_actual_values_from_kafka(FILTER_CATALOG, FILTER_SCHEMA, FILTER_TABLE)
+latest_values = init_actual_values_from_kafka(FILTER_CATALOG, FILTER_SCHEMA, FILTER_TABLE, FILTER_BUCKET)
  
 # collection of fully qualified table names
 fully_qualified_table_names = list(latest_values.keys())

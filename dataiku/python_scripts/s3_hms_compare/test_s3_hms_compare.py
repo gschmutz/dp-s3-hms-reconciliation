@@ -104,7 +104,7 @@ FILTER_TABLE = get_param('FILTER_TABLE', "")
 FILTER_BUCKET = get_param('FILTER_BUCKET', "")
 
 # either postgresql or trino
-METASTORE_DB_ACCESS_STRATEGY = get_param('METASTORE_DB_ACCESS_STRATEGY', 'postgresql')
+HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
 
 HMS_DB_USER = get_credential('HMS_DB_USER', 'hive')
 HMS_DB_PASSWORD = get_credential('HMS_DB_PASSWORD', 'abc123!')
@@ -112,12 +112,12 @@ HMS_DB_HOST = get_param('HMS_DB_HOST', 'hive-metastore-db')
 HMS_DB_PORT = get_param('HMS_DB_PORT', '5432')
 HMS_DB_DBNAME = get_param('HMS_DB_NAME', 'metastore_db')
 
-TRINO_USER = get_credential('TRINO_USER', 'trino')
-TRINO_PASSWORD = get_credential('TRINO_PASSWORD', '')
-TRINO_HOST = get_param('TRINO_HOST', 'localhost')
-TRINO_PORT = get_param('TRINO_PORT', '28082')
-TRINO_CATALOG = get_param('TRINO_CATALOG', 'minio')
-TRINO_SCHEMA = get_param('TRINO_SCHEMA', 'flight_db')
+HMS_TRINO_USER = get_credential('HMS_TRINO_USER', 'trino')
+HMS_TRINO_PASSWORD = get_credential('HMS_TRINO_PASSWORD', '')
+HMS_TRINO_HOST = get_param('HMS_TRINO_HOST', 'localhost')
+HMS_TRINO_PORT = get_param('HMS_TRINO_PORT', '28082')
+HMS_TRINO_CATALOG = get_param('HMS_TRINO_CATALOG', 'minio')
+HMS_TRINO_USE_SSL = get_param('HMS_TRINO_USE_SSL', 'true').lower() in ('true', '1', 't')
 
 # Connect to MinIO or AWS S3
 ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
@@ -129,10 +129,12 @@ S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_loc
 # Construct connection URLs
 hms_db_url = f'postgresql://{HMS_DB_USER}:{HMS_DB_PASSWORD}@{HMS_DB_HOST}:{HMS_DB_PORT}/{HMS_DB_DBNAME}'
 # Construct connection URLs
-hms_trino_url = f'trino://{TRINO_USER}:{TRINO_PASSWORD}@{TRINO_HOST}:{TRINO_PORT}/{TRINO_CATALOG}/{TRINO_SCHEMA}'
+hms_trino_url = f'trino://{HMS_TRINO_USER}:{HMS_TRINO_PASSWORD}@{HMS_TRINO_HOST}:{HMS_TRINO_PORT}/{HMS_TRINO_CATALOG}'
+if HMS_TRINO_USE_SSL:
+    hms_trino_url = f'{hms_trino_url}?protocol=https&verify=false'
 
 # Setup connections to the metadatastore, either directly to postgresql or via trino
-if METASTORE_DB_ACCESS_STRATEGY.lower() == 'postgresql':
+if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
     src_engine = create_engine(hms_db_url)
 else:
     src_engine = create_engine(hms_trino_url)

@@ -91,7 +91,7 @@ HMS_TRINO_PASSWORD = get_credential('HMS_TRINO_PASSWORD', '')
 HMS_TRINO_HOST = get_param('HMS_TRINO_HOST', 'localhost')
 HMS_TRINO_PORT = get_param('HMS_TRINO_PORT', '28082')
 HMS_TRINO_CATALOG = get_param('HMS_TRINO_CATALOG', 'minio')
-#HMS_TRINO_SCHEMA = get_param('HMS_TRINO_SCHEMA', 'flight_db')
+HMS_TRINO_USE_SSL = get_param('HMS_TRINO_USE_SSL', 'true').lower() in ('true', '1', 't')
 
 # Connect to MinIO or AWS S3
 # Read endpoint URL from environment variable, default to localhost MinIO
@@ -102,8 +102,10 @@ S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_loc
 
 # Construct connection URLs
 hms_db_url = f'postgresql://{HMS_DB_USER}:{HMS_DB_PASSWORD}@{HMS_DB_HOST}:{HMS_DB_PORT}/{HMS_DB_DBNAME}'
-# Construct connection URLs
+
 hms_trino_url = f'trino://{HMS_TRINO_USER}:{HMS_TRINO_PASSWORD}@{HMS_TRINO_HOST}:{HMS_TRINO_PORT}/{HMS_TRINO_CATALOG}'
+if HMS_TRINO_USE_SSL:
+    hms_trino_url = f'{hms_trino_url}?protocol=https&verify=false'
 
 # Setup connections to the metadatastore, either directly to postgresql or via trino
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
