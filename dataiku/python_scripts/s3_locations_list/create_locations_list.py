@@ -77,7 +77,7 @@ def get_credential(name, default=None) -> str:
 FILTER_DATABASE = get_param('FILTER_DATABASE', "")
 FILTER_TABLES = get_param('FILTER_TABLES', "")
 
-NUMBER_OF_BUCKETS = int(get_param('NUMBER_OF_BUCKETS', "3"))
+NUMBER_OF_BATCHES = int(get_param('NUMBER_OF_BATCHES', "3"))
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
 
 HMS_DB_USER = get_credential('HMS_DB_USER', 'hive')
@@ -138,12 +138,12 @@ class S3Location(Base):
     has_partitions = Column(String, nullable=False)
     partition_count = Column(Integer, nullable=False)
     row_num = Column(Integer, nullable=False)
-    bucket = Column(Integer, nullable=False)
+    batch = Column(Integer, nullable=False)
 
     def __repr__(self):
-        return f"<S3Location(fully_qualified_table_name={self.fully_qualified_table_name}, database_name={self.database_name}, table_name='{self.table_name}', table_type='{self.table_type}', location='{self.location}', has_partitions='{self.has_partitions}', partition_count={self.partition_count}, row_num={self.row_num}, bucket={self.bucket})>"
+        return f"<S3Location(fully_qualified_table_name={self.fully_qualified_table_name}, database_name={self.database_name}, table_name='{self.table_name}', table_type='{self.table_type}', location='{self.location}', has_partitions='{self.has_partitions}', partition_count={self.partition_count}, row_num={self.row_num}, batch={self.batch})>"
 
-def get_s3_locations_with_buckets(number_of_buckets: int=0):
+def get_s3_locations_with_batches(number_of_batches: int=0):
     """
     """
 
@@ -160,7 +160,7 @@ def get_s3_locations_with_buckets(number_of_buckets: int=0):
             text(f"""
                 SELECT
                     r.*,
-                    (row_num % {number_of_buckets}) + 1 as bucket
+                    (row_num % {number_of_batches}) + 1 as bucket
                 FROM
                     (
                     SELECT
@@ -205,7 +205,7 @@ def get_s3_locations_with_buckets(number_of_buckets: int=0):
                             pk.has_partitions
                 ) r	
                 ) r
-                ORDER BY (row_num % {number_of_buckets}) + 1
+                ORDER BY (row_num % {number_of_batches}) + 1
             """)
             )
         
@@ -215,10 +215,10 @@ def get_s3_locations_with_buckets(number_of_buckets: int=0):
 
 with open(S3_LOCATION_LIST_OBJECT_NAME, "w") as f:
     # Print CSV header
-    print("fully_qualified_table_name,database_name,table_name,table_type,s3_location,has_partitions,partition_count,bucket", file=f)
+    print("fully_qualified_table_name,database_name,table_name,table_type,s3_location,has_partitions,partition_count,batch", file=f)
                 
     # Iterate through Hive tables
-    s3_locations = get_s3_locations_with_buckets(NUMBER_OF_BUCKETS)
+    s3_locations = get_s3_locations_with_batches(NUMBER_OF_BATCHES)
     print(f"Found {len(s3_locations)} S3 locations in Hive Metastore")
     for s3_location in s3_locations:
         print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{s3_location.table_type},{s3_location.location},{s3_location.has_partitions},{s3_location.partition_count},{s3_location.bucket}", file=f)
