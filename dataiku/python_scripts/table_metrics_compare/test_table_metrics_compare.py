@@ -113,7 +113,7 @@ def get_credential(name, default=None) -> str:
 FILTER_CATALOG = get_param('FILTER_CATALOG', "")
 FILTER_SCHEMA = get_param('FILTER_SCHEMA', "")
 FILTER_TABLE = get_param('FILTER_TABLE', "")
-FILTER_BUCKET = get_param('FILTER_BUCKET', "")
+FILTER_BATCH = get_param('FILTER_BATCH', "")
  
 TRINO_USER = get_credential('TRINO_USER', 'trino')
 TRINO_PASSWORD = get_credential('TRINO_PASSWORD', '')
@@ -200,13 +200,13 @@ consumer_conf_plaintext = {
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_s3_location_list(bucket: str) -> pd.DataFrame:
+def get_s3_location_list(batch: str) -> pd.DataFrame:
     """
     Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
     Parameters:
-        bucket (str): The name of the S3 bucket to filter the locations by. If provided, only locations matching this bucket are returned.
+        batch (str): The name of the S3 batch to filter the locations by. If provided, only locations matching this batch are returned.
     Returns:
-        pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified bucket.
+        pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified batch.
     Raises:
         ValueError: If the CSV file retrieved from S3 is empty.
     Notes:
@@ -232,8 +232,8 @@ def get_s3_location_list(bucket: str) -> pd.DataFrame:
     csv_buffer = io.StringIO(csv_string)
 
     s3_location_list = pd.read_csv(csv_buffer)
-    if bucket:
-        s3_location_list = s3_location_list[s3_location_list["bucket"] == int(bucket)]
+    if batch:
+        s3_location_list = s3_location_list[s3_location_list["batch"] == int(batch)]
         print(s3_location_list)
 
     return s3_location_list
@@ -287,7 +287,7 @@ def get_actual_count(table: str, timestamp_column: Optional[str] = None, baselin
             count = None
     return count
  
-def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_schema: Optional[str] = None, filter_table: Optional[str] = None, filter_bucket: Optional[str] = None):
+def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_schema: Optional[str] = None, filter_table: Optional[str] = None, filter_batch: Optional[str] = None):
     """
     Initializes and returns the latest actual values for tables by consuming messages from a Kafka topic.
     This function reads String-serialized messages from a Kafka topic, optionally filtering by catalog, schema, and table name.
@@ -309,8 +309,8 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
     latest_values: dict[str, dict] = {}
     logger.info(f"running init_actual_values_from_kafka({filter_catalog},{filter_schema},{filter_table})")
  
-    # the list of S3 locations with the tables (potentially filtered by bucket)
-    s3_location_list = get_s3_location_list(filter_bucket)
+    # the list of S3 locations with the tables (potentially filtered by batch)
+    s3_location_list = get_s3_location_list(filter_batch)
 
     # read from kafka
     if KAFKA_SECURITY_PROTOCOL == 'SSL':
@@ -418,7 +418,7 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
     return latest_values
 
 # all the latest values from Kafka (applying a potential filer set via environment variables)
-latest_values = init_actual_values_from_kafka(FILTER_CATALOG, FILTER_SCHEMA, FILTER_TABLE, FILTER_BUCKET)
+latest_values = init_actual_values_from_kafka(FILTER_CATALOG, FILTER_SCHEMA, FILTER_TABLE, FILTER_BATCH)
  
 # collection of fully qualified table names
 fully_qualified_table_names = list(latest_values.keys())

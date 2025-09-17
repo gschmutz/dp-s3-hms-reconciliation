@@ -86,7 +86,7 @@ def get_credential(name, default=None) -> str:
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 FILTER_DATABASE = get_param('FILTER_DATABASE', None)
 FILTER_TABLE = get_param('FILTER_TABLE', None)
-FILTER_BUCKET = get_param('FILTER_BUCKET', "")
+FILTER_BATCH = get_param('FILTER_BATCH', "")
 
 # either postgresql or trino
 HMS_VERSION = get_param('HMS_VERSION', '3')                       # either "3" or "4"
@@ -161,11 +161,11 @@ if ENDPOINT_URL:
 
 s3 = boto3.client(**s3_config)
 
-def get_s3_location_list(bucket: str) -> pd.DataFrame:
+def get_s3_location_list(batch: str) -> pd.DataFrame:
     """
     Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
     Parameters:
-        bucket (str): The name of the S3 bucket to filter the locations by. If provided, only locations matching this bucket are returned.
+        batch (str): The name of the batch to filter the locations by. 
     Returns:
         pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified bucket.
     Raises:
@@ -193,8 +193,8 @@ def get_s3_location_list(bucket: str) -> pd.DataFrame:
     csv_buffer = io.StringIO(csv_string)
 
     s3_location_list = pd.read_csv(csv_buffer)
-    if bucket:
-        s3_location_list = s3_location_list[s3_location_list["bucket"] == int(bucket)]
+    if batch:
+        s3_location_list = s3_location_list[s3_location_list["batch"] == int(batch)]
         print(s3_location_list)
 
     return s3_location_list
@@ -225,7 +225,7 @@ def get_tables(database_name: Optional[str] = None):
         return df
 
 def do_trino_repair(database_name: Optional[str] = None, filter_database: Optional[str] = None, filter_table: Optional[str] = None):
-    s3_location_list = get_s3_location_list(FILTER_BUCKET)
+    s3_location_list = get_s3_location_list(FILTER_BATCH)
     all_tables = get_tables(database_name)
 
     filtered_tables = all_tables[all_tables["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
@@ -248,7 +248,7 @@ def do_trino_repair(database_name: Optional[str] = None, filter_database: Option
             conn.execute(text(f"call minio.system.sync_partition_metadata('{database}', '{table_name}', 'FULL')"))
 
 def do_hms_3x_repair(database_name: Optional[str] = None, filter_database: Optional[str] = None, filter_table: Optional[str] = None):
-    s3_location_list = get_s3_location_list(FILTER_BUCKET)
+    s3_location_list = get_s3_location_list(FILTER_BATCH)
     all_tables = get_tables(database_name)
 
     filtered_tables = all_tables[all_tables["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]

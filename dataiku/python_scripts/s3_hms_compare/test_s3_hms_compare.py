@@ -5,15 +5,15 @@ Key functionalities:
 - Securely retrieves configuration parameters and credentials from Dataiku or environment variables.
 - Connects to HMS via PostgreSQL or Trino, and to S3 via boto3.
 - Loads baseline partition data and S3 location lists from CSV files stored in S3.
-- Filters baseline data based on configured bucket, database, or table filters.
+- Filters baseline data based on configured batch, database, or table filters.
 - Queries HMS for partition counts and names for tables at specified S3 locations, up to a given timestamp.
 - Computes SHA256 fingerprints of partition name lists for integrity checks.
 - Provides pytest parameterized tests to compare partition counts and fingerprints between S3 baseline and HMS.
 Functions:
 - get_param(name, default): Retrieves a parameter value from scenario variables or environment variables.
 - get_credential(name, default): Retrieves a secret credential from Dataiku or returns a default.
-- get_s3_location_list(bucket): Loads and filters S3 location list from a CSV in S3.
-- get_s3_partitions_baseline(): Loads baseline partition data from a CSV in S3, filtered by bucket.
+- get_s3_location_list(batch): Loads and filters S3 location list from a CSV in S3.
+- get_s3_partitions_baseline(): Loads baseline partition data from a CSV in S3, filtered by batch.
 - get_latest_timestamp(db_baseline): Returns the latest timestamp from the baseline DataFrame.
 - get_hms_partitions_count_and_partnames(s3_location, end_timestamp): Queries HMS for partition count and names for a given S3 location and timestamp.
 - quote_ident(name, dialect): Quotes SQL identifiers for the given dialect.
@@ -101,7 +101,7 @@ def get_credential(name, default=None) -> str:
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 FILTER_DATABASE = get_param('FILTER_DATABASE', "")
 FILTER_TABLE = get_param('FILTER_TABLE', "")
-FILTER_BUCKET = get_param('FILTER_BUCKET', "")
+FILTER_BATCH = get_param('FILTER_BATCH', "")
 
 # either postgresql or trino
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
@@ -157,13 +157,13 @@ if ENDPOINT_URL:
 
 s3 = boto3.client(**s3_config)
 
-def get_s3_location_list(bucket: str) -> pd.DataFrame:
+def get_s3_location_list(batch: str) -> pd.DataFrame:
     """
     Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
     Parameters:
-        bucket (str): The name of the S3 bucket to filter the locations by. If provided, only locations matching this bucket are returned.
+        batch (str): The name of the batch to filter the locations by. If provided, only locations matching this batch are returned.
     Returns:
-        pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified bucket.
+        pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified batch.
     Raises:
         ValueError: If the CSV file retrieved from S3 is empty.
     Notes:
@@ -189,8 +189,8 @@ def get_s3_location_list(bucket: str) -> pd.DataFrame:
     csv_buffer = io.StringIO(csv_string)
 
     s3_location_list = pd.read_csv(csv_buffer)
-    if bucket:
-        s3_location_list = s3_location_list[s3_location_list["bucket"] == int(bucket)]
+    if batch:
+        s3_location_list = s3_location_list[s3_location_list["batch"] == int(batch)]
         print(s3_location_list)
 
     return s3_location_list
@@ -225,7 +225,7 @@ def get_s3_partitions_baseline():
 
     db_baseline = pd.read_csv(csv_buffer)
     
-    s3_location_list = get_s3_location_list(FILTER_BUCKET)
+    s3_location_list = get_s3_location_list(FILTER_BATCH)
     db_baseline = db_baseline[db_baseline["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
 
     return db_baseline
@@ -294,7 +294,7 @@ def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int)
 def quote_ident(name: str, dialect):
     return dialect.identifier_preparer.quote(name)
 
-# retrieve the baseline (optionally only for a certain bucket)
+# retrieve the baseline (optionally only for a certain batch)
 db_baseline = get_s3_partitions_baseline()
 
 # Dynamically get the s3 locations from the baseline file
