@@ -203,6 +203,8 @@ def get_partition_info(s3a_url):
     bucket = parsed.netloc
     prefix = parsed.path.lstrip("/")
 
+    print(f"Analyzing S3 location: bucket={bucket}, prefix={prefix}")
+
     paginator = s3.get_paginator("list_objects_v2")
     page_iterator = paginator.paginate(Bucket=bucket, Prefix=prefix)
 
