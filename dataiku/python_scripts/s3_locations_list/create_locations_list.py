@@ -159,7 +159,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
     elif batching_strategy == 'balanced_by_partition_size':
         batching_expr = f"(ranked_by_partition_count % {number_of_batches}) + 1"
     elif batching_strategy == 'by_table_prefix' and number_of_batches: 
-        batching_expr = "(group_nr_by_prefix % {number_of_batches}) + 1"
+        batching_expr = f"(group_nr_by_prefix % {number_of_batches}) + 1"
     elif batching_strategy == 'by_table_prefix' and not number_of_batches: 
         batching_expr = "group_nr_by_prefix"
 
