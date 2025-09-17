@@ -11,7 +11,7 @@ Set environment variables
 ```bash
 export FILTER_DATABASE=
 export FILTER_TABLE=
-export FILTER_BUCKET=
+export FILTER_BATCH=
 
 export HMS_VERSION=4
 export HMS_DB_ACCESS_STRATEGY=trino

@@ -24,7 +24,7 @@ Set environment variables
 export FILTER_CATALOG=
 export FILTER_SCHEMA=
 export FILTER_TABLE=
-export FILTER_BUCKET=
+export FILTER_BATCH=
 
 export TRINO_USER=trino
 export TRINO_PASSWORD=
