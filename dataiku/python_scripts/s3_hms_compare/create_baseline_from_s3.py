@@ -242,7 +242,7 @@ with open(S3_BASELINE_OBJECT_NAME, "w") as f:
     # Print CSV header
     print("fully_qualified_table_name,database_name,table_name,s3_location,partition_count,fingerprint,timestamp", file=f)
 
-    print
+    print(f"Getting S3 locations for tables with filter database='{FILTER_DATABASE}' and filter tables='{FILTER_TABLES}'")
                 
     s3_locations = get_s3_locations_for_tables(FILTER_DATABASE, FILTER_TABLES)
 
