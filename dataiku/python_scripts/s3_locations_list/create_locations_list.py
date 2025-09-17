@@ -97,6 +97,8 @@ HMS_TRINO_USE_SSL = get_param('HMS_TRINO_USE_SSL', 'true').lower() in ('true', '
 # Read endpoint URL from environment variable, default to localhost MinIO
 S3_UPLOAD_ENABLED = get_param('S3_UPLOAD_ENABLED', 'true').lower() in ['true', '1', 'yes']  
 S3_ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
+AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', 'admin')
+AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', 'admin123')
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
 S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
 
@@ -117,6 +119,9 @@ else:
 s3_config = {"service_name": "s3"}
 if S3_ENDPOINT_URL:
     s3_config["endpoint_url"] = S3_ENDPOINT_URL
+if AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY:
+    s3_config["aws_access_key_id"] = AWS_ACCESS_KEY
+    s3_config["aws_secret_access_key"] = AWS_SECRET_ACCESS_KEY      
 
 s3 = boto3.client(**s3_config)
 
