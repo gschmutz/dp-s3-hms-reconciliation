@@ -160,7 +160,7 @@ def get_s3_locations_with_batches(number_of_batches: int=0):
             text(f"""
                 SELECT
                     r.*,
-                    (row_num % {number_of_batches}) + 1 as bucket
+                    (row_num % {number_of_batches}) + 1 as batch
                 FROM
                     (
                     SELECT
@@ -221,7 +221,7 @@ with open(S3_LOCATION_LIST_OBJECT_NAME, "w") as f:
     s3_locations = get_s3_locations_with_batches(NUMBER_OF_BATCHES)
     print(f"Found {len(s3_locations)} S3 locations in Hive Metastore")
     for s3_location in s3_locations:
-        print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{s3_location.table_type},{s3_location.location},{s3_location.has_partitions},{s3_location.partition_count},{s3_location.bucket}", file=f)
+        print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{s3_location.table_type},{s3_location.location},{s3_location.has_partitions},{s3_location.partition_count},{s3_location.batch}", file=f)
 
 # upload the file to S3 to make it available
 if S3_UPLOAD_ENABLED:
