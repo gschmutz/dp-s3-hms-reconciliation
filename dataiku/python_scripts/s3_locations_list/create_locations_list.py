@@ -1,3 +1,8 @@
+"""
+TODO: implement database filter
+      add strategy with prefix
+"""
+
 import select
 import boto3
 import os
@@ -77,7 +82,9 @@ def get_credential(name, default=None) -> str:
 FILTER_DATABASE = get_param('FILTER_DATABASE', "")
 FILTER_TABLES = get_param('FILTER_TABLES', "")
 
+BATCHING_STRATEGY = get_param('BATCHING_STRATEGY', 'balanced_by_size')      # balanced_by_size | by_prefix
 NUMBER_OF_BATCHES = int(get_param('NUMBER_OF_BATCHES', "3"))
+
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
 
 HMS_DB_USER = get_credential('HMS_DB_USER', 'hive')
@@ -143,7 +150,7 @@ class S3Location(Base):
     def __repr__(self):
         return f"<S3Location(fully_qualified_table_name={self.fully_qualified_table_name}, database_name={self.database_name}, table_name='{self.table_name}', table_type='{self.table_type}', location='{self.location}', has_partitions='{self.has_partitions}', partition_count={self.partition_count}, row_num={self.row_num}, batch={self.batch})>"
 
-def get_s3_locations_with_batches(number_of_batches: int=0):
+def get_s3_locations_with_batches(number_of_batches: int=0, filter_database: str="", filter_tables: str="") -> list[S3Location]:
     """
     """
 
@@ -151,6 +158,15 @@ def get_s3_locations_with_batches(number_of_batches: int=0):
         catalog_name = ""
     else:
         catalog_name = f"{HMS_TRINO_CATALOG}."
+
+    if filter_database and filter_tables:
+        filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}' AND t.\"TBL_NAME\" IN ({filter_tables})"
+    elif filter_database:
+        filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}'"
+    elif filter_tables:
+        filter_where_clause = f"WHERE t.\"TBL_NAME\" IN ({filter_tables})"
+    else:
+        filter_where_clause = ""    
 
     with src_engine.connect() as conn:
         Session = sessionmaker(bind=src_engine)
@@ -197,6 +213,7 @@ def get_s3_locations_with_batches(number_of_batches: int=0):
                             t."TBL_ID" = pk."TBL_ID"
                         left JOIN public."PARTITIONS" p on
                             t."TBL_ID" = p."TBL_ID"
+                        {filter_where_clause}    
                         GROUP BY
                             d."NAME",
                             t."TBL_NAME",
@@ -218,7 +235,7 @@ with open(S3_LOCATION_LIST_OBJECT_NAME, "w") as f:
     print("fully_qualified_table_name,database_name,table_name,table_type,s3_location,has_partitions,partition_count,batch", file=f)
                 
     # Iterate through Hive tables
-    s3_locations = get_s3_locations_with_batches(NUMBER_OF_BATCHES)
+    s3_locations = get_s3_locations_with_batches(NUMBER_OF_BATCHES, FILTER_DATABASE, FILTER_TABLES)
     print(f"Found {len(s3_locations)} S3 locations in Hive Metastore")
     for s3_location in s3_locations:
         print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{s3_location.table_type},{s3_location.location},{s3_location.has_partitions},{s3_location.partition_count},{s3_location.batch}", file=f)
