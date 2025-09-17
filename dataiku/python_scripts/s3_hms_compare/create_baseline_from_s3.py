@@ -147,6 +147,7 @@ def get_s3_locations_for_tables(filter_database=None, filter_tables=None):
         catalog_name = ""
     else:
         catalog_name = f"{HMS_TRINO_CATALOG}."
+
     if filter_database and filter_tables:
         filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}' AND t.\"TBL_NAME\" IN ({filter_tables})"
     elif filter_database:
@@ -240,6 +241,8 @@ def get_partition_info(s3a_url):
 with open(S3_BASELINE_OBJECT_NAME, "w") as f:
     # Print CSV header
     print("fully_qualified_table_name,database_name,table_name,s3_location,partition_count,fingerprint,timestamp", file=f)
+
+    print
                 
     s3_locations = get_s3_locations_for_tables(FILTER_DATABASE, FILTER_TABLES)
 
