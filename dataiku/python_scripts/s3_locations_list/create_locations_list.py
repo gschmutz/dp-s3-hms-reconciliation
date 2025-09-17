@@ -157,9 +157,11 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
     if batching_strategy not in ['balanced_by_partition_size', 'by_table_prefix']:    
         raise ValueError(f"Unknown batch strategy: {batching_strategy}")
     elif batching_strategy == 'balanced_by_partition_size':
-        batch_expr = f"(ranked_by_partition_count % {number_of_batches}) + 1"
-    elif batching_strategy == 'by_table_prefix': 
-        batch_expr = "group_nr_by_prefix"
+        batching_expr = f"(ranked_by_partition_count % {number_of_batches}) + 1"
+    elif batching_strategy == 'by_table_prefix' and number_of_batches: 
+        batching_expr = "(group_nr_by_prefix % {number_of_batches}) + 1"
+    elif batching_strategy == 'by_table_prefix' and not number_of_batches: 
+        batching_expr = "group_nr_by_prefix"
 
     if src_engine.dialect.name == 'postgresql':
         catalog_name = ""
@@ -183,7 +185,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
             text(f"""
                 SELECT
                     r.*,
-                    {batch_expr} as batch
+                    {batching_expr} as batch
                 FROM
                     (
                     SELECT
@@ -231,7 +233,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
                             pk.has_partitions
                     ) r	
                 ) r
-                ORDER BY {batch_expr}
+                ORDER BY {batching_expr}
             """)
             )
         
