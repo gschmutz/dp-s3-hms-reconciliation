@@ -94,29 +94,32 @@ HMS_TRINO_USE_SSL = get_param('HMS_TRINO_USE_SSL', 'true').lower() in ('true', '
 # Read endpoint URL from environment variable, default to localhost MinIO
 S3_UPLOAD_ENABLED = get_param('S3_UPLOAD_ENABLED', 'true').lower() in ['true', '1', 'yes']  
 S3_ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
-S3_BUCKET = get_param('S3_BUCKET', 'flight-bucket')
-S3_PREFIX = get_param('S3_PREFIX', 'refined')  # optionally, specify a prefix
+AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', 'admin')
+AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', 'admin123')
 
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
 S3_BASELINE_OBJECT_NAME = get_param('S3_BASELINE_OBJECT_NAME', 'baseline_s3.csv')
 
-# Construct connection URLs
-hms_db_url = f'postgresql://{HMS_DB_USER}:{HMS_DB_PASSWORD}@{HMS_DB_HOST}:{HMS_DB_PORT}/{HMS_DB_DBNAME}'
-
-hms_trino_url = f'trino://{HMS_TRINO_USER}:{HMS_TRINO_PASSWORD}@{HMS_TRINO_HOST}:{HMS_TRINO_PORT}/{HMS_TRINO_CATALOG}'
-if HMS_TRINO_USE_SSL:
-    hms_trino_url = f'{hms_trino_url}?protocol=https&verify=false'
-
-# Setup connections to the metadatastore, either directly to postgresql or via trino
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
+    # Construct connection URLs
+    hms_db_url = f'postgresql://{HMS_DB_USER}:{HMS_DB_PASSWORD}@{HMS_DB_HOST}:{HMS_DB_PORT}/{HMS_DB_DBNAME}'
+    
     src_engine = create_engine(hms_db_url)
 else:
+    hms_trino_url = f'trino://{HMS_TRINO_USER}:{HMS_TRINO_PASSWORD}@{HMS_TRINO_HOST}:{HMS_TRINO_PORT}/{HMS_TRINO_CATALOG}'
+    if HMS_TRINO_USE_SSL:
+        hms_trino_url = f'{hms_trino_url}?protocol=https&verify=false'
+    
     src_engine = create_engine(hms_trino_url)
+
 
 # Create S3 client configuration
 s3_config = {"service_name": "s3"}
 if S3_ENDPOINT_URL:
     s3_config["endpoint_url"] = S3_ENDPOINT_URL
+if AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY:
+    s3_config["aws_access_key_id"] = AWS_ACCESS_KEY
+    s3_config["aws_secret_access_key"] = AWS_SECRET_ACCESS_KEY   
 
 s3 = boto3.client(**s3_config)
 
