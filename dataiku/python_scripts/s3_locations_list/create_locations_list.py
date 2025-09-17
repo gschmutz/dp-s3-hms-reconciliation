@@ -150,15 +150,15 @@ class S3Location(Base):
     def __repr__(self):
         return f"<S3Location(fully_qualified_table_name={self.fully_qualified_table_name}, database_name={self.database_name}, table_name='{self.table_name}', table_type='{self.table_type}', location='{self.location}', has_partitions='{self.has_partitions}', partition_count={self.partition_count}, row_num={self.row_num}, batch={self.batch})>"
 
-def get_s3_locations_with_batches(batch_strategy: str="", number_of_batches: int=0, filter_database: str="", filter_tables: str="") -> list[S3Location]:
+def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: int=0, filter_database: str="", filter_tables: str="") -> list[S3Location]:
     """
     """
 
-    if batch_strategy not in ['balanced_by_partition_size', 'by_table_prefix']:    
-        raise ValueError(f"Unknown batch strategy: {batch_strategy}")
-    elif batch_strategy == 'balanced_by_partition_size':
+    if batching_strategy not in ['balanced_by_partition_size', 'by_table_prefix']:    
+        raise ValueError(f"Unknown batch strategy: {batching_strategy}")
+    elif batching_strategy == 'balanced_by_partition_size':
         batch_expr = f"(ranked_by_partition_count % {number_of_batches}) + 1"
-    elif batch_strategy == 'by_table_prefix': 
+    elif batching_strategy == 'by_table_prefix': 
         batch_expr = "group_nr_by_prefix"
 
     if src_engine.dialect.name == 'postgresql':
@@ -231,7 +231,7 @@ def get_s3_locations_with_batches(batch_strategy: str="", number_of_batches: int
                             pk.has_partitions
                     ) r	
                 ) r
-                ORDER BY (row_num % {number_of_batches}) + 1
+                ORDER BY {batch_expr}
             """)
             )
         
