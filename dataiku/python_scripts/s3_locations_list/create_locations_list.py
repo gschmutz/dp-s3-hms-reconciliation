@@ -113,8 +113,6 @@ else:
     
     src_engine = create_engine(hms_trino_url)
 
-    print (f"Using HMS Trino URL: {hms_trino_url}")
-
 # Create S3 client configuration
 s3_config = {"service_name": "s3"}
 if S3_ENDPOINT_URL:
