@@ -143,7 +143,7 @@ def get_s3_locations_for_tables(filter_database=None, filter_tables=None):
     if src_engine.dialect.name == 'postgresql':
         catalog_name = ""
     else:
-        catalog_name = "hive_metastore_db."
+        catalog_name = f"{HMS_TRINO_CATALOG}."
     if filter_database and filter_tables:
         filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}' AND t.\"TBL_NAME\" IN ({filter_tables})"
     else:

@@ -145,14 +145,14 @@ def get_s3_locations_with_buckets(number_of_buckets: int=0):
     if src_engine.dialect.name == 'postgresql':
         catalog_name = ""
     else:
-        catalog_name = "hive_metastore_db."
+        catalog_name = f"{HMS_TRINO_CATALOG}."
 
     with src_engine.connect() as conn:
         Session = sessionmaker(bind=src_engine)
         session = Session()
 
         stmt = select(S3Location).from_statement(
-            text("""
+            text(f"""
                 SELECT
                     r.*,
                     (row_num % :bucket_size) + 1 as bucket
@@ -176,17 +176,17 @@ def get_s3_locations_with_buckets(number_of_buckets: int=0):
                             end as has_partitions,
                             COUNT(p."PART_ID") as partition_count
                         FROM
-                            public."TBLS" t
-                        JOIN public."DBS" d on
+                            {catalog_name}public."TBLS" t
+                        JOIN {catalog_name}public."DBS" d on
                             t."DB_ID" = d."DB_ID"
-                        JOIN public."SDS" s on
+                        JOIN {catalog_name}public."SDS" s on
                             t."SD_ID" = s."SD_ID"
                         LEFT JOIN (
                             SELECT
                                 pk."TBL_ID",
                                 greatest(SIGN(COUNT(*)), 0) as has_partitions
                             FROM
-                                public."PARTITION_KEYS" pk
+                                {catalog_name}public."PARTITION_KEYS" pk
                             GROUP BY
                                 pk."TBL_ID") pk on
                             t."TBL_ID" = pk."TBL_ID"

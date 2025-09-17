@@ -131,7 +131,6 @@ def test_get_tables():
 
     schemas = conn.execute(text("SHOW SCHEMAS")).fetchall()
 
-
     for schema in schemas:
         if not schema:
             continue
