@@ -100,18 +100,20 @@ S3_ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
 S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
 
-# Construct connection URLs
-hms_db_url = f'postgresql://{HMS_DB_USER}:{HMS_DB_PASSWORD}@{HMS_DB_HOST}:{HMS_DB_PORT}/{HMS_DB_DBNAME}'
-
-hms_trino_url = f'trino://{HMS_TRINO_USER}:{HMS_TRINO_PASSWORD}@{HMS_TRINO_HOST}:{HMS_TRINO_PORT}/{HMS_TRINO_CATALOG}'
-if HMS_TRINO_USE_SSL:
-    hms_trino_url = f'{hms_trino_url}?protocol=https&verify=false'
-
 # Setup connections to the metadatastore, either directly to postgresql or via trino
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
+    # Construct connection URLs
+    hms_db_url = f'postgresql://{HMS_DB_USER}:{HMS_DB_PASSWORD}@{HMS_DB_HOST}:{HMS_DB_PORT}/{HMS_DB_DBNAME}'
+    
     src_engine = create_engine(hms_db_url)
 else:
+    hms_trino_url = f'trino://{HMS_TRINO_USER}:{HMS_TRINO_PASSWORD}@{HMS_TRINO_HOST}:{HMS_TRINO_PORT}/{HMS_TRINO_CATALOG}'
+    if HMS_TRINO_USE_SSL:
+        hms_trino_url = f'{hms_trino_url}?protocol=https&verify=false'
+    
     src_engine = create_engine(hms_trino_url)
+
+    print (f"Using HMS Trino URL: {hms_trino_url}")
 
 # Create S3 client configuration
 s3_config = {"service_name": "s3"}
