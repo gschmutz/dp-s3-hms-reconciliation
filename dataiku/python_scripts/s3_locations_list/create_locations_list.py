@@ -155,7 +155,7 @@ def get_s3_locations_with_buckets(number_of_buckets: int=0):
             text(f"""
                 SELECT
                     r.*,
-                    (row_num % :bucket_size) + 1 as bucket
+                    (row_num % {number_of_buckets}) + 1 as bucket
                 FROM
                     (
                     SELECT
@@ -200,9 +200,9 @@ def get_s3_locations_with_buckets(number_of_buckets: int=0):
                             pk.has_partitions
                 ) r	
                 ) r
-                ORDER BY (row_num % :bucket_size) + 1
+                ORDER BY (row_num % {number_of_buckets}) + 1
             """)
-            ).params(bucket_size=number_of_buckets)
+            )
         
         s3_locations = session.execute(stmt).scalars().all()
 
