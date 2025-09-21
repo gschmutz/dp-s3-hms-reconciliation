@@ -278,8 +278,7 @@ def do_hms_3x_repair(database_name: Optional[str] = None, filter_database: Optio
     
     conn.close()
 
-if __name__ == "__main__":
-    if HMS_VERSION == "3":
-        do_hms_3x_repair(None, FILTER_DATABASE, FILTER_TABLE)
-    else:
-        do_trino_repair(None, FILTER_DATABASE, FILTER_TABLE)
+if HMS_VERSION == "3":
+    do_hms_3x_repair(None, FILTER_DATABASE, FILTER_TABLE)
+else:
+    do_trino_repair(None, FILTER_DATABASE, FILTER_TABLE)
