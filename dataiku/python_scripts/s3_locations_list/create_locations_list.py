@@ -82,7 +82,7 @@ def get_credential(name, default=None) -> str:
 FILTER_DATABASE = get_param('FILTER_DATABASE', "")
 FILTER_TABLES = get_param('FILTER_TABLES', "")
 
-BATCHING_STRATEGY = get_param('BATCHING_STRATEGY', 'balanced_by_partition_size')      # balanced_by_partition_size | by_table_prefix
+BATCHING_STRATEGY = get_param('BATCHING_STRATEGY', 'balanced_by_partition_size')      # balanced_by_partition_size | by_table_prefix | create_time
 NUMBER_OF_BATCHES = int(get_param('NUMBER_OF_BATCHES', "3"))
 
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
@@ -154,7 +154,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
     """
     """
 
-    if batching_strategy not in ['balanced_by_partition_size', 'by_table_prefix']:    
+    if batching_strategy not in ['balanced_by_partition_size', 'by_table_prefix', 'create_time']:    
         raise ValueError(f"Unknown batch strategy: {batching_strategy}")
     elif batching_strategy == 'balanced_by_partition_size':
         batching_expr = f"(ranked_by_partition_count % {number_of_batches}) + 1"
@@ -162,6 +162,8 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
         batching_expr = f"(group_nr_by_prefix % {number_of_batches}) + 1"
     elif batching_strategy == 'by_table_prefix' and not number_of_batches: 
         batching_expr = "group_nr_by_prefix"
+    elif batching_strategy == 'create_time' and number_of_batches: 
+        batching_expr = "batched_by_max_create_time"
 
     if src_engine.dialect.name == 'postgresql':
         catalog_name = ""
@@ -191,8 +193,11 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
                     SELECT
                         r.*,
                         row_number() over (
-                        order by r.partition_count desc) as ranked_by_partition_count,
-                        dense_rank() over (order by r.prefix) as group_nr_by_prefix
+                            order by r.partition_count desc) as ranked_by_partition_count,
+                        dense_rank() over (
+                            order by r.prefix) as group_nr_by_prefix,
+                        NTILE({number_of_batches}) over (
+                            order by r.max_create_time desc) as batched_by_max_create_time
                     FROM
                         (
                         SELECT
@@ -206,7 +211,8 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
                                 when pk.has_partitions >= 1 then 'Y'
                                 else 'N'
                             end as has_partitions,
-                            COUNT(p."PART_ID") as partition_count
+                            COUNT(p."PART_ID") as partition_count,
+                            GREATEST(MAX(t."CREATE_TIME"), MAX(p."CREATE_TIME")) AS max_create_time
                         FROM
                             {catalog_name}public."TBLS" t
                         JOIN {catalog_name}public."DBS" d on
@@ -222,7 +228,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
                             GROUP BY
                                 pk."TBL_ID") pk on
                             t."TBL_ID" = pk."TBL_ID"
-                        left JOIN public."PARTITIONS" p on
+                        left JOIN {catalog_name}public."PARTITIONS" p on
                             t."TBL_ID" = p."TBL_ID"
                         {filter_where_clause}    
                         GROUP BY
@@ -233,7 +239,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
                             pk.has_partitions
                     ) r	
                 ) r
-                ORDER BY {batching_expr}
+                ORDER BY {batching_expr}, prefix
             """)
             )
         
