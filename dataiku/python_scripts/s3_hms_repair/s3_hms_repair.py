@@ -228,11 +228,14 @@ def do_trino_repair(database_name: Optional[str] = None, filter_database: Option
     s3_location_list = get_s3_location_list(FILTER_BATCH)
     all_tables = get_tables(database_name)
 
+    logger.info(f"Nunmber of tables: {len(all_tables)}")
+    logger.info(f"Nunmber of s3 location entries: {len(s3_location_list)}")
+
     filtered_tables = all_tables[all_tables["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
 
     # Loop over each row in the filtered_tables DataFrame
     for _, table in filtered_tables.iterrows():
-
+        logger.info(f"Table to repair: {table}")
         table_name = table["TBL_NAME"]
         database = table["DATABASE_NAME"]
 

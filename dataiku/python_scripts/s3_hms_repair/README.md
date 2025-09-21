@@ -32,6 +32,12 @@ export HMS_TRINO_HOST=localhost
 export HMS_TRINO_PORT=28082
 export HMS_TRINO_CATALOG=hive_metastore_db
 
+export TRINO_USER=trino
+export TRINO_PASSWORD=
+export TRINO_HOST=localhost
+export TRINO_PORT=28082
+export TRINO_CATALOG=minio
+
 export AWS_ACCESS_KEY_ID=admin
 export AWS_SECRET_ACCESS_KEY=abc123abc123
 export S3_ENDPOINT_URL=http://localhost:9000

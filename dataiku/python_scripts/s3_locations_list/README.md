@@ -28,7 +28,7 @@ export HMS_TRINO_PORT=28082
 export HMS_TRINO_CATALOG=hive_metastore_db
 export HMS_TRINO_USE_SSL=false
 
-export S3_UPLOAD_ENABLED=false
+export S3_UPLOAD_ENABLED=true
 export AWS_ACCESS_KEY_ID=admin
 export AWS_SECRET_ACCESS_KEY=abc123abc123
 export S3_ENDPOINT_URL=http://localhost:9000

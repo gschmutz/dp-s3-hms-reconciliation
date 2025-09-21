@@ -12,5 +12,4 @@ pyhive
 thriftpy2
 thrift
 thrift_sasl
-confluent-kafka
 kubernetes
