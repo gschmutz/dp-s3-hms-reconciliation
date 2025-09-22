@@ -160,6 +160,7 @@ if AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY:
     s3_config["aws_secret_access_key"] = AWS_SECRET_ACCESS_KEY
 if ENDPOINT_URL:
     s3_config["endpoint_url"] = ENDPOINT_URL
+    s3_config["verify"] = False  # Disable SSL verification for self-signed certificates
 
 s3 = boto3.client(**s3_config)
 
@@ -269,7 +270,7 @@ def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int)
     else:
         part_names_expr = """array_join(array_agg(p."PART_NAME" ORDER BY p."PART_NAME"), ',')"""
         catalog_name = HMS_TRINO_CATALOG + "."
-        
+
     with src_engine.connect() as conn:
         # TODO: Make end_timestamp optional and configure number of seconds to add
         result = conn.execute(text(f"""
