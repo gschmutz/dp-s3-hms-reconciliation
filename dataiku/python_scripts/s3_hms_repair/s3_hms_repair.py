@@ -270,7 +270,7 @@ def do_trino_repair(filter_database: Optional[str] = None, filter_tables: Option
 
             if not DRY_RUN:
                 logger.info(f"Executing repairing table {database}.{table_name} via Trino") 
-                conn.execute(text(f"call minio.system.sync_partition_metadata('{database}', '{table_name}', 'FULL')"))
+                conn.execute(text(f"call {TRINO_CATALOG}.system.sync_partition_metadata('{database}', '{table_name}', 'FULL')"))
             else:
                 logger.info(f"DRY RUN - would execute repairing table {database}.{table_name} via Trino")
 
@@ -308,8 +308,6 @@ def do_hms_3x_repair(filter_database: Optional[str] = None, filter_tables: Optio
             cursor.close()
         else:
             logger.info(f"DRY RUN - would execute repairing table {database}.{table_name} via Trino")
-
-
     
     conn.close()
 
