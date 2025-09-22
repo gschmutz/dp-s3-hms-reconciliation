@@ -60,9 +60,15 @@ def get_param(name, default=None) -> str:
     Returns:
         Any: The value of the parameter if found, otherwise the default value.
     """
+    return_value = default
     if scenario is not None:
-        return scenario.get_all_variables().get(name, default)
-    return os.getenv(name, default)
+        return_value = scenario.get_all_variables().get(name, default)
+    else:
+        return_value = os.getenv(name, default)
+
+    logger.info(f"{name}: {return_value}")
+
+    return return_value
  
 def get_credential(name, default=None) -> str:
     """
@@ -73,20 +79,27 @@ def get_credential(name, default=None) -> str:
     Returns:
         str: The value of the credential if found, otherwise the default value.
     """
+    return_value = default
     if client is not None:
         secrets = client.get_auth_info(with_secrets=True)["secrets"]
         for secret in secrets:
             if secret["key"] == name:
                 if "value" in secret:
-                    return secret["value"]
+                    return_value = secret["value"]
                 else:
                     break
-    return default
+    else:
+        return_value = os.getenv(name, default)
+    logger.info(f"{name}: *****")
+         
+    return return_value
 
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 FILTER_DATABASE = get_param('FILTER_DATABASE', None)
-FILTER_TABLE = get_param('FILTER_TABLE', None)
-FILTER_BATCH = get_param('FILTER_BATCH', "")
+FILTER_TABLES = get_param('FILTER_TABLES', None)
+FILTER_BATCH = get_param('FILTER_BATCH', "")                    # either all or a specific batch number, if empty it will not use the batch filter at all
+
+DRY_RUN = get_param('DRY_RUN', 'true').lower() in ('true', '1', 't')
 
 # either postgresql or trino
 HMS_VERSION = get_param('HMS_VERSION', '3')                       # either "3" or "4"
@@ -182,8 +195,8 @@ def get_s3_location_list(batch: str) -> pd.DataFrame:
     csv_string = response['Body'].read().decode('utf-8')
 
     # Debug: print the content
-    print(f"CSV content length: {len(csv_string)}")
-    print(f"First 100 chars: {csv_string[:100]}")
+    logger.debug(f"CSV content length: {len(csv_string)}")
+    logger.debug(f"First 100 chars: {csv_string[:100]}")
 
     # Add error handling
     if not csv_string.strip():
@@ -195,15 +208,23 @@ def get_s3_location_list(batch: str) -> pd.DataFrame:
     s3_location_list = pd.read_csv(csv_buffer)
     if batch:
         s3_location_list = s3_location_list[s3_location_list["batch"] == int(batch)]
-        print(s3_location_list)
 
     return s3_location_list
 
-def get_tables(database_name: Optional[str] = None):
+def get_tables(filter_database: Optional[str] = None, filter_tables: Optional[list[str]] = None) -> pd.DataFrame:
     if hms_engine.dialect.name == 'postgresql':
         catalog_name = ""
     else:
         catalog_name = f"{HMS_TRINO_CATALOG}."
+
+    if filter_database and filter_tables:
+        filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}' AND t.\"TBL_NAME\" IN ({filter_tables})"
+    elif filter_database:
+        filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}'"
+    elif filter_tables:
+        filter_where_clause = f"WHERE t.\"TBL_NAME\" IN ({filter_tables})"
+    else:
+        filter_where_clause = ""            
 
     with hms_engine.connect() as conn:
         # TODO: Make end_timestamp optional and configure number of seconds to add
@@ -216,45 +237,53 @@ def get_tables(database_name: Optional[str] = None):
                t."TBL_TYPE"
             FROM {catalog_name}public."TBLS" t
             JOIN {catalog_name}public."DBS" d ON t."DB_ID" = d."DB_ID"
+            {filter_where_clause}
         """
-        if (database_name is not None) and (database_name != ""):
-            sql += f" WHERE d.\"NAME\" = '{database_name}'"
 
         result = conn.execute(text(sql))
         df = pd.DataFrame(result.fetchall(), columns=result.keys())
         return df
 
-def do_trino_repair(database_name: Optional[str] = None, filter_database: Optional[str] = None, filter_table: Optional[str] = None):
-    s3_location_list = get_s3_location_list(FILTER_BATCH)
-    all_tables = get_tables(database_name)
+def do_trino_repair(filter_database: Optional[str] = None, filter_tables: Optional[list[str]] = None, filter_batch: Optional[str] = None):
+    filtered_tables = get_tables(filter_database, filter_tables)
 
-    logger.info(f"Nunmber of tables: {len(all_tables)}")
-    logger.info(f"Nunmber of s3 location entries: {len(s3_location_list)}")
+    logger.info(f"Number of tables: {len(filtered_tables)}")
+    
+    if filter_batch:
+        s3_location_list = get_s3_location_list(filter_batch)
+        logger.info(f"Number of s3 location entries: {len(s3_location_list)}")
 
-    filtered_tables = all_tables[all_tables["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
+        filtered_tables = filtered_tables[filtered_tables["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
 
     # Loop over each row in the filtered_tables DataFrame
     for _, table in filtered_tables.iterrows():
-        logger.info(f"Table to repair: {table}")
         table_name = table["TBL_NAME"]
         database = table["DATABASE_NAME"]
 
         # apply filters it set
-        if filter_database and database != filter_database:
+        if filter_database and database.lower() != filter_database.lower():
             continue
-        if filter_table and table_name != filter_table:
+        if filter_tables and table_name.lower() not in filter_tables:
             continue
 
         with trino_engine.connect() as conn:
-            logger.info(f"Repairing table {database}.{table_name} via Trino")   
 
-            conn.execute(text(f"call minio.system.sync_partition_metadata('{database}', '{table_name}', 'FULL')"))
+            if not DRY_RUN:
+                logger.info(f"Executing repairing table {database}.{table_name} via Trino") 
+                conn.execute(text(f"call minio.system.sync_partition_metadata('{database}', '{table_name}', 'FULL')"))
+            else:
+                logger.info(f"DRY RUN - would execute repairing table {database}.{table_name} via Trino")
 
-def do_hms_3x_repair(database_name: Optional[str] = None, filter_database: Optional[str] = None, filter_table: Optional[str] = None):
-    s3_location_list = get_s3_location_list(FILTER_BATCH)
-    all_tables = get_tables(database_name)
+def do_hms_3x_repair(filter_database: Optional[str] = None, filter_tables: Optional[list[str]] = None, filter_batch: Optional[str] = None):
+    filtered_tables = get_tables(filter_database, filter_tables)
 
-    filtered_tables = all_tables[all_tables["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
+    logger.info(f"Number of tables: {len(filtered_tables)}")
+
+    if filter_batch:
+        s3_location_list = get_s3_location_list(filter_batch)
+        logger.info(f"Number of s3 location entries: {len(s3_location_list)}")
+
+        filtered_tables = filtered_tables[filtered_tables["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
 
     conn = hive.Connection(host=HMS_HOST, port=HMS_PORT, database="default")
 
@@ -267,18 +296,29 @@ def do_hms_3x_repair(database_name: Optional[str] = None, filter_database: Optio
         # apply filters it set
         if filter_database and database != filter_database:
             continue
-        if filter_table and table_name != filter_table:
+        if filter_tables and table_name.lower() not in filter_tables:
             continue
 
-        cursor = conn.cursor()
         # execute MSCK REPAIR
-        cursor.execute(f"MSCK REPAIR TABLE {database}.{table_name}")
+        if not DRY_RUN:
+            logger.info(f"Executing repairing table {database}.{table_name} via HiveServer2") 
 
-        cursor.close()
+            cursor = conn.cursor()
+            cursor.execute(f"MSCK REPAIR TABLE {database}.{table_name}")
+            cursor.close()
+        else:
+            logger.info(f"DRY RUN - would execute repairing table {database}.{table_name} via Trino")
+
+
     
     conn.close()
 
+# Convert FILTER_TABLE to a list if it's a comma-separated string
+filter_tables_list: list[str] = None
+if FILTER_TABLES:
+    filter_tables_list = [tbl.strip().lower() for tbl in FILTER_TABLES.split(",") if tbl.strip()]
+
 if HMS_VERSION == "3":
-    do_hms_3x_repair(None, FILTER_DATABASE, FILTER_TABLE)
+    do_hms_3x_repair(FILTER_DATABASE, filter_tables_list, FILTER_BATCH)
 else:
-    do_trino_repair(None, FILTER_DATABASE, FILTER_TABLE)
+    do_trino_repair(FILTER_DATABASE, filter_tables_list, FILTER_BATCH)

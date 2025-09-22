@@ -8,10 +8,10 @@ Set environment variables
 
 ```bash
 export FILTER_DATABASE=
-export FILTER_TABLE=
+export FILTER_TABLES=
 
 export BATCHING_STRATEGY=balanced_by_partition_size
-export NUMBER_OF_BUCKETS=3
+export NUMBER_OF_BATCHES=3
 
 export HMS_DB_ACCESS_STRATEGY=trino
 
