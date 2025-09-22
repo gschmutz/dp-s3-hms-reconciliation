@@ -183,7 +183,7 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
         Prints status and debug information to stdout.
         Closes the Kafka consumer upon completion.
     """
-    latest_values: dict[str, dict] = {}
+    latency_per_table: dict[str, int] = {}
     logger.info(f"running init_actual_values_from_kafka({filter_catalog},{filter_schema},{filter_table})")
 
     # read from kafka
@@ -257,15 +257,18 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
 
                         logger.info(f"Processing metric for table {metric.get('schema')}.{metric.get('table_name')} with latency: {latency}")
  
-
+                        latency_per_table[metric.get('schema') + "." + metric.get('table_name')] = latency
     except KeyboardInterrupt:
         logger.info("Stopping consumer.")
     except Exception as ex:
         logger.error(f"Error {ex}")
     finally:
         consumer.close()
-        logger.info(f"init_actual_values_from_kafka() completed. Found {len(latest_values)} tables: {list(latest_values.keys())}")
-    return latest_values
+        logger.info(f"init_actual_values_from_kafka() completed. Found {len(latency_per_table)} tables: {list(latency_per_table.keys())}")
+    return latency_per_table
 
 # all the latest values from Kafka (applying a potential filer set via environment variables)
-init_actual_values_from_kafka(FILTER_CATALOG, FILTER_SCHEMA, FILTER_TABLE, FILTER_BATCH)
+latency_per_table = init_actual_values_from_kafka(FILTER_CATALOG, FILTER_SCHEMA, FILTER_TABLE, FILTER_BATCH)
+
+for k, v in sorted(latency_per_table.items(), key=lambda item: item[1], reverse=True):
+    logger.info(f"{k}: {v./1000:.1f} sec")
