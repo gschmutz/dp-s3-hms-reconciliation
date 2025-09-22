@@ -144,6 +144,7 @@ class S3Location(Base):
     location = Column(String, nullable=False)
     has_partitions = Column(String, nullable=False)
     partition_count = Column(Integer, nullable=False)
+    last_create_time = Column(Integer, nullable=False)
     row_num = Column(Integer, nullable=False)
     batch = Column(Integer, nullable=False)
 
@@ -163,7 +164,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
     elif batching_strategy == 'by_table_prefix' and not number_of_batches: 
         batching_expr = "group_nr_by_prefix"
     elif batching_strategy == 'create_time' and number_of_batches: 
-        batching_expr = "batched_by_max_create_time"
+        batching_expr = "batched_by_last_create_time"
 
     if src_engine.dialect.name == 'postgresql':
         catalog_name = ""
@@ -175,7 +176,8 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
     elif filter_database:
         filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}'"
     elif filter_tables:
-        filter_where_clause = f"WHERE t.\"TBL_NAME\" IN ({filter_tables})"
+        filter_tables_str = ",".join([f"'{tbl.strip()}'" for tbl in filter_tables.split(",")])
+        filter_where_clause = f"WHERE t.\"TBL_NAME\" IN ({filter_tables_str})"
     else:
         filter_where_clause = ""    
 
@@ -197,7 +199,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
                         dense_rank() over (
                             order by r.prefix) as group_nr_by_prefix,
                         NTILE({number_of_batches}) over (
-                            order by r.max_create_time desc) as batched_by_max_create_time
+                            order by r.last_create_time desc) as batched_by_last_create_time
                     FROM
                         (
                         SELECT
@@ -212,7 +214,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
                                 else 'N'
                             end as has_partitions,
                             COUNT(p."PART_ID") as partition_count,
-                            GREATEST(MAX(t."CREATE_TIME"), MAX(p."CREATE_TIME")) AS max_create_time
+                            GREATEST(MAX(t."CREATE_TIME"), MAX(p."CREATE_TIME")) AS last_create_time
                         FROM
                             {catalog_name}public."TBLS" t
                         JOIN {catalog_name}public."DBS" d on
@@ -249,13 +251,13 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
 
 with open(S3_LOCATION_LIST_OBJECT_NAME, "w") as f:
     # Print CSV header
-    print("fully_qualified_table_name,database_name,table_name,table_type,s3_location,has_partitions,partition_count,batch", file=f)
+    print("fully_qualified_table_name,database_name,table_name,table_type,s3_location,has_partitions,partition_count,last_create_time,batch", file=f)
                 
     # Iterate through Hive tables
     s3_locations = get_s3_locations_with_batches(BATCHING_STRATEGY, NUMBER_OF_BATCHES, FILTER_DATABASE, FILTER_TABLES)
     print(f"Found {len(s3_locations)} S3 locations in Hive Metastore")
     for s3_location in s3_locations:
-        print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{s3_location.table_type},{s3_location.location},{s3_location.has_partitions},{s3_location.partition_count},{s3_location.batch}", file=f)
+        print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{s3_location.table_type},{s3_location.location},{s3_location.has_partitions},{s3_location.partition_count},{s3_location.last_create_time},{s3_location.batch}", file=f)
 
 # upload the file to S3 to make it available
 if S3_UPLOAD_ENABLED:
