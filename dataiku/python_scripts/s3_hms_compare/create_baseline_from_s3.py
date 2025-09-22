@@ -1,3 +1,20 @@
+"""
+This script creates a baseline CSV file containing metadata and partition information for tables stored in S3, as referenced by a Hive Metastore (HMS) database. It supports both PostgreSQL and Trino as HMS backends and can run inside or outside Dataiku DSS scenarios.
+Main functionalities:
+- Retrieves configuration parameters and credentials from Dataiku scenario variables or environment variables.
+- Connects to HMS database (PostgreSQL or Trino) to fetch table metadata, including S3 locations.
+- For each table, analyzes the corresponding S3 location to determine partition structure, count, fingerprint, and latest modification timestamp.
+- Writes the collected information to a CSV file.
+- Optionally uploads the CSV file to an S3 bucket.
+Key components:
+- Parameter and credential retrieval functions (`get_param`, `get_credential`)
+- SQLAlchemy ORM mapping for table metadata (`S3Location`)
+- Functions to query HMS for S3 locations and analyze S3 partition info
+- S3 client configuration supporting MinIO and AWS S3
+- Logging for operational visibility
+Environment variables and scenario parameters allow filtering by database and table, configuring S3 endpoints, and controlling upload behavior.
+
+"""
 import boto3
 import os
 import hashlib
@@ -148,6 +165,15 @@ class S3Location(Base):
 
 def get_s3_locations_for_tables(filter_database=None, filter_tables=None):
     """
+    Retrieves S3 location information for tables from the Hive Metastore (HMS) via SQLAlchemy.
+    Queries the metastore to obtain details about tables, including their fully qualified names,
+    database names, table names, types, S3 locations, partition status, and partition counts.
+    Optional filters can be applied to restrict results to specific databases or tables.
+    Args:
+        filter_database (str, optional): Name of the database to filter results by. Defaults to None.
+        filter_tables (str, optional): Comma-separated list of table names to filter results by. Defaults to None.
+    Returns:
+        list[S3Location]: A list of S3Location objects containing metadata for each table matching the filters.
     """
 
     if src_engine.dialect.name == 'postgresql':
@@ -209,6 +235,21 @@ def get_s3_locations_for_tables(filter_database=None, filter_tables=None):
         return s3_locations
 
 def get_partition_info(s3a_url):
+    """
+    Analyzes an S3 location to extract partition information.
+    Converts an S3A URL to an S3 URL, lists objects under the specified prefix,
+    and detects partition-style folder structures (e.g., col=value). Collects
+    all unique partitions, determines the latest modification timestamp among
+    objects, and generates a fingerprint of the partition set.
+    Args:
+        s3a_url (str): The S3A URL pointing to the location to analyze.
+    Returns:
+        dict: A dictionary containing:
+            - "s3_location" (str): The original S3A URL.
+            - "partition_count" (int): Number of unique partitions detected.
+            - "fingerprint" (str): SHA256 hash of the sorted partition list.
+            - "timestamp" (int): Unix timestamp of the latest modification.
+    """
     # Convert s3a:// to s3://
     s3_url = s3a_url.replace("s3a://", "s3://")
     parsed = urlparse(s3_url)

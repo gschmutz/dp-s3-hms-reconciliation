@@ -13,6 +13,8 @@ export FILTER_DATABASE=
 export FILTER_TABLES=
 export FILTER_BATCH=
 
+export DRY_RUN=false
+
 export HMS_VERSION=4
 export HMS_DB_ACCESS_STRATEGY=trino
 export HMS_HOST=localhost
