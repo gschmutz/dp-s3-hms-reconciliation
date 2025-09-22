@@ -255,8 +255,6 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
 
                         latency = end_ts - start_ts
 
-                        logger.info(f"Processing metric for table {metric.get('schema')}.{metric.get('table_name')} with latency: {latency}")
- 
                         latency_per_table[metric.get('schema') + "." + metric.get('table_name')] = latency
     except KeyboardInterrupt:
         logger.info("Stopping consumer.")
