@@ -271,4 +271,4 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
 latency_per_table = init_actual_values_from_kafka(FILTER_CATALOG, FILTER_SCHEMA, FILTER_TABLE, FILTER_BATCH)
 
 for k, v in sorted(latency_per_table.items(), key=lambda item: item[1], reverse=True):
-    logger.info(f"{k}: {v./1000:.1f} sec")
+    logger.info(f"{k}: {v/1000} sec")
