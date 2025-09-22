@@ -34,6 +34,7 @@ TODO: run in batches
 """
 import pytest
 import os
+import io
 import time
 import json
 import logging
@@ -135,7 +136,6 @@ KAFKA_TOPIC_NAME = get_param('KAFKA_TOPIC_NAME', 'dpraw_execution_status_log_v1'
 # Connect to MinIO or AWS S3
 ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
-BASELINE_OBJECT_KEY = get_param('S3_BASELINE_OBJECT_NAME', 'baseline_s3.csv')
 S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
 
 # Construct connection URLs
