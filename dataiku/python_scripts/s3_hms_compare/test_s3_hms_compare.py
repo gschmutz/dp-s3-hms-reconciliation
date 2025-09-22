@@ -310,9 +310,11 @@ max_timestamp = get_latest_timestamp(db_baseline)
 partition_counts = db_baseline.set_index("s3_location")["partition_count"].to_dict()
 partition_fingerprint = db_baseline.set_index("s3_location")["fingerprint"].to_dict()
 
+logger.info("using this timestamp for comparison: " + str(max_timestamp))
+
 @pytest.mark.parametrize("s3_location", s3_locations)
 def test_partition_counts(s3_location: str):
-    partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp, )
+    partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp)
     assert partition is not None, f"Expected a row for {s3_location} from HMS select query, but got None"
     expected_count: int = partition_counts[s3_location]
     actual_count: int = partition["partition_count"]
