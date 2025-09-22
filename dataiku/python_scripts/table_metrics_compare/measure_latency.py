@@ -115,13 +115,6 @@ FILTER_SCHEMA = get_param('FILTER_SCHEMA', "")
 FILTER_TABLE = get_param('FILTER_TABLE', "")
 FILTER_BATCH = get_param('FILTER_BATCH', "")
  
-TRINO_USER = get_credential('TRINO_USER', 'trino')
-TRINO_PASSWORD = get_credential('TRINO_PASSWORD', '')
-TRINO_HOST = get_param('TRINO_HOST', 'localhost')
-TRINO_PORT = get_param('TRINO_PORT', '28082')
-TRINO_CATALOG = get_param('TRINO_CATALOG', 'minio')
-TRINO_USE_SSL = get_param('TRINO_USE_SSL', 'true').lower() in ('true', '1', 't')
- 
 KAFKA_BOOTSTRAP_SERVERS = get_param('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
 KAFKA_SECURITY_PROTOCOL = get_param('KAFKA_SECURITY_PROTOCOL', 'PLAINTEXT')
 KAFKA_SSL_CA_LOCATION = get_param('KAFKA_SSL_CA_LOCATION', '/path/to/ca.pem')
@@ -132,29 +125,6 @@ KAFKA_SASL_USERNAME = get_credential('KAFKA_SASL_USERNAME', '<USERNAME_NOT_SET>'
 KAFKA_SASL_PASSWORD = get_credential('KAFKA_SASL_PASSWORD', '<PASSWORD_NOT_SET>')
 KAFKA_TOPIC_NAME = get_param('KAFKA_TOPIC_NAME', 'dpraw_execution_status_log_v1')
 
-# Construct connection URLs
-trino_url = f'trino://{TRINO_USER}:{TRINO_PASSWORD}@{TRINO_HOST}:{TRINO_PORT}/{TRINO_CATALOG}'
-if TRINO_USE_SSL:
-    trino_url = f'{trino_url}?protocol=https&verify=false'
-
-# Setup connections
-trino_engine = create_engine(trino_url)
-
-# Create a session and S3 client
-s3 = boto3.client('s3')
-
-# Create S3 client configuration
-s3_config = {"service_name": "s3"}
-AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', None)
-AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', None)
-
-if AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY:
-    s3_config["aws_access_key_id"] = AWS_ACCESS_KEY
-    s3_config["aws_secret_access_key"] = AWS_SECRET_ACCESS_KEY
-if ENDPOINT_URL:
-    s3_config["endpoint_url"] = ENDPOINT_URL
-
-s3 = boto3.client(**s3_config)
  
 # Kafka Consumer config
 consumer_conf_ssl = {
