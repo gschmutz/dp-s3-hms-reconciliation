@@ -131,12 +131,6 @@ KAFKA_SSL_KEY_PASSWORD = get_credential('KAFKA_SSL_KEY_PASSWORD', '<PASSWORD_NOT
 KAFKA_SASL_USERNAME = get_credential('KAFKA_SASL_USERNAME', '<USERNAME_NOT_SET>')
 KAFKA_SASL_PASSWORD = get_credential('KAFKA_SASL_PASSWORD', '<PASSWORD_NOT_SET>')
 KAFKA_TOPIC_NAME = get_param('KAFKA_TOPIC_NAME', 'dpraw_execution_status_log_v1')
- 
-# Connect to MinIO or AWS S3
-ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
-S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
-BASELINE_OBJECT_KEY = get_param('S3_BASELINE_OBJECT_NAME', 'baseline_s3.csv')
-S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
 
 # Construct connection URLs
 trino_url = f'trino://{TRINO_USER}:{TRINO_PASSWORD}@{TRINO_HOST}:{TRINO_PORT}/{TRINO_CATALOG}'
@@ -221,9 +215,6 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
     """
     latest_values: dict[str, dict] = {}
     logger.info(f"running init_actual_values_from_kafka({filter_catalog},{filter_schema},{filter_table})")
- 
-    # the list of S3 locations with the tables (potentially filtered by batch)
-    s3_location_list = get_s3_location_list(filter_batch)
 
     # read from kafka
     if KAFKA_SECURITY_PROTOCOL == 'SSL':
