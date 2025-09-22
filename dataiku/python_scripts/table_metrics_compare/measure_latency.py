@@ -250,8 +250,8 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
 
                         metric: dict = json.loads(post_create_table_metric_step["job_exit_message"])
 
-                        start_ts = int(json.loads(post_create_table_metric_step["start_ts"]))
-                        end_ts = int(json.loads(post_create_table_metric_step["end_ts"]))
+                        start_ts = post_create_table_metric_step["start_ts"]
+                        end_ts = post_create_table_metric_step["end_ts"]
 
                         latency = end_ts - start_ts
 
