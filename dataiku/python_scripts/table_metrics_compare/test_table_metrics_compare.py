@@ -82,12 +82,15 @@ def get_param(name, default=None) -> str:
     Returns:
         Any: The value of the parameter if found, otherwise the default value.
     """
+    return_value = default
     if scenario is not None:
-        return scenario.get_all_variables().get(name, default)
-    value = os.getenv(name, default)
+        return_value = scenario.get_all_variables().get(name, default)
+    else:
+        return_value = os.getenv(name, default)
 
-    logger.info(f"{name}: {value}")
-    return value
+    logger.info(f"{name}: {return_value}")
+
+    return return_value
  
 def get_credential(name, default=None) -> str:
     """
@@ -98,17 +101,20 @@ def get_credential(name, default=None) -> str:
     Returns:
         str: The value of the credential if found, otherwise the default value.
     """
+    return_value = default
     if client is not None:
         secrets = client.get_auth_info(with_secrets=True)["secrets"]
         for secret in secrets:
             if secret["key"] == name:
                 if "value" in secret:
-                    value = secret["value"]
-                    logger.info(f"{name}: *****")
-                    return value
+                    return_value = secret["value"]
                 else:
                     break
-    return default
+    else:
+        return_value = os.getenv(name, default)
+    logger.info(f"{name}: *****")
+         
+    return return_value
  
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 FILTER_CATALOG = get_param('FILTER_CATALOG', "")

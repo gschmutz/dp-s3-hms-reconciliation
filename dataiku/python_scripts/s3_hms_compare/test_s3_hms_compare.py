@@ -1,30 +1,36 @@
 """
-This module provides utilities and tests for reconciling partition metadata between S3 (MinIO/AWS) and Hive Metastore (HMS).
-It is designed to run both inside and outside Dataiku DSS scenarios, supporting dynamic configuration via environment variables or scenario variables.
+This module provides utilities and pytest-based tests for reconciling partition counts and fingerprints
+between S3 and Hive Metastore (HMS) tables. It is designed to run both inside and outside Dataiku DSS scenarios,
+supporting dynamic configuration via scenario variables or environment variables.
 Key functionalities:
-- Securely retrieves configuration parameters and credentials from Dataiku or environment variables.
-- Connects to HMS via PostgreSQL or Trino, and to S3 via boto3.
+- Securely retrieves configuration parameters and credentials from Dataiku scenario variables, Dataiku secrets, or environment variables.
+- Establishes connections to HMS via PostgreSQL or Trino, and to S3 (MinIO or AWS).
 - Loads baseline partition data and S3 location lists from CSV files stored in S3.
-- Filters baseline data based on configured batch, database, or table filters.
-- Queries HMS for partition counts and names for tables at specified S3 locations, up to a given timestamp.
-- Computes SHA256 fingerprints of partition name lists for integrity checks.
-- Provides pytest parameterized tests to compare partition counts and fingerprints between S3 baseline and HMS.
+- Queries HMS for partition counts and names, supporting filtering by database, table, and batch.
+- Compares partition counts and fingerprints (SHA256 hashes of partition names) between S3 baseline and HMS.
+- Provides pytest parameterized tests for validating partition counts and fingerprints for each S3 location.
 Functions:
-- get_param(name, default): Retrieves a parameter value from scenario variables or environment variables.
-- get_credential(name, default): Retrieves a secret credential from Dataiku or returns a default.
-- get_s3_location_list(batch): Loads and filters S3 location list from a CSV in S3.
-- get_s3_partitions_baseline(): Loads baseline partition data from a CSV in S3, filtered by batch.
+- get_param(name, default): Retrieves configuration parameters from scenario variables or environment variables.
+- get_credential(name, default): Retrieves secret credentials from Dataiku secrets or environment variables.
+- get_s3_location_list(batch): Loads and optionally filters S3 location list from a CSV file in S3.
+- get_s3_partitions_baseline(): Loads baseline partition data from a CSV file in S3 and filters by S3 location list.
 - get_latest_timestamp(db_baseline): Returns the latest timestamp from the baseline DataFrame.
-- get_hms_partitions_count_and_partnames(s3_location, end_timestamp): Queries HMS for partition count and names for a given S3 location and timestamp.
+- get_hms_partitions_count_and_partnames(s3_location, end_timestamp, filter_database, filter_tables): Queries HMS for partition counts and names for a given S3 location.
 - quote_ident(name, dialect): Quotes SQL identifiers for the given dialect.
 Pytest tests:
-- test_partition_counts(s3_location): Asserts that partition counts in HMS match the S3 baseline.
-- test_partition_fingerprints(s3_location): Asserts that partition name fingerprints in HMS match the S3 baseline.
-Configuration:
-- Supports dynamic configuration for database access strategy, S3 endpoints, credentials, and filtering options.
-- Handles secure logging and error handling for missing or empty data.
-Intended usage:
-- Automated reconciliation of partition metadata between S3 and HMS, with integration into Dataiku DSS scenarios or standalone pytest runs.
+- test_partition_counts(s3_location): Asserts that partition counts in HMS match those in the S3 baseline for each location.
+- test_partition_fingerprints(s3_location): Asserts that partition fingerprints in HMS match those in the S3 baseline for each location.
+Environment variables and scenario parameters:
+- FILTER_DATABASE, FILTER_TABLES, FILTER_BATCH: Filtering options for baseline and HMS queries.
+- HMS_DB_ACCESS_STRATEGY: Selects HMS connection method (PostgreSQL or Trino).
+- HMS_DB_USER, HMS_DB_PASSWORD, HMS_DB_HOST, HMS_DB_PORT, HMS_DB_NAME: HMS database connection parameters.
+- HMS_TRINO_USER, HMS_TRINO_PASSWORD, HMS_TRINO_HOST, HMS_TRINO_PORT, HMS_TRINO_CATALOG, HMS_TRINO_USE_SSL: Trino connection parameters.
+- S3_ENDPOINT_URL, S3_ADMIN_BUCKET, S3_BASELINE_OBJECT_NAME, S3_LOCATION_LIST_OBJECT_NAME: S3 connection and object parameters.
+- AWS_ACCESS_KEY, AWS_SECRET_ACCESS_KEY: S3 credentials.
+Logging:
+- Logs configuration, connection status, and test progress.
+Exceptions:
+- Raises ValueError if required CSV files from S3 are empty.
 """
 import hashlib
 import io
@@ -106,12 +112,14 @@ def get_credential(name, default=None) -> str:
     return return_value
 
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
-#FILTER_DATABASE = get_param('FILTER_DATABASE', "")
-#FILTER_TABLES = get_param('FILTER_TABLES', "")
+FILTER_DATABASE = get_param('FILTER_DATABASE', "")
+FILTER_TABLES = get_param('FILTER_TABLES', "")
 FILTER_BATCH = get_param('FILTER_BATCH', "")
 
 # either postgresql or trino
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
+# use timestamp from baseline file or current time
+USE_BASELINE_TIMESTAMP = get_param('USE_BASELINE_TIMESTAMP', 'false').lower() in ('true', '1', 't')
 
 HMS_DB_USER = get_credential('HMS_DB_USER', 'hive')
 HMS_DB_PASSWORD = get_credential('HMS_DB_PASSWORD', 'abc123!')
@@ -250,7 +258,7 @@ def get_latest_timestamp(db_baseline):
 
     return latest_timestamp
 
-def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int):
+def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int, filter_database=None, filter_tables=None):
     """
     Retrieves the count and names of partitions for a Hive Metastore table located at the specified S3 location,
     with partition creation times up to the given end timestamp.
@@ -271,6 +279,15 @@ def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int)
     else:
         part_names_expr = """array_join(array_agg(p."PART_NAME" ORDER BY p."PART_NAME"), ',')"""
         catalog_name = HMS_TRINO_CATALOG + "."
+
+    if filter_database and filter_tables:
+        filter_where_clause = f"AND d.\"NAME\" = '{filter_database}' AND t.\"TBL_NAME\" IN ({filter_tables})"
+    elif filter_database:
+        filter_where_clause = f"AND d.\"NAME\" = '{filter_database}'"
+    elif filter_tables:
+        filter_where_clause = f"AND t.\"TBL_NAME\" IN ({filter_tables})"
+    else:
+        filter_where_clause = ""    
 
     with src_engine.connect() as conn:
         # TODO: Make end_timestamp optional and configure number of seconds to add
@@ -293,6 +310,7 @@ def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int)
                 JOIN {catalog_name}public."DBS" d ON t."DB_ID" = d."DB_ID"
                 JOIN {catalog_name}public."SDS" s ON t."SD_ID" = s."SD_ID"
                 WHERE s."LOCATION" = '{s3_location}'
+                {filter_where_clause}
             ) t
             ON t."TBL_ID" = p."TBL_ID"
         """))
@@ -307,17 +325,20 @@ db_baseline = get_s3_partitions_baseline()
 
 # Dynamically get the s3 locations from the baseline file
 s3_locations = db_baseline["s3_location"].tolist()
-max_timestamp = get_latest_timestamp(db_baseline)
 partition_counts = db_baseline.set_index("s3_location")["partition_count"].to_dict()
 partition_fingerprint = db_baseline.set_index("s3_location")["fingerprint"].to_dict()
 
-max_timestamp = int(time.time())
+# set the timestamp to use for the query from HMS
+if not USE_BASELINE_TIMESTAMP:
+    max_timestamp = get_latest_timestamp(db_baseline)
+else:
+    max_timestamp = int(time.time())
 
 logger.info(f"Testing {len(s3_locations)} S3 locations with max timestamp {max_timestamp}")
 
 @pytest.mark.parametrize("s3_location", s3_locations)
 def test_partition_counts(s3_location: str):
-    partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp)
+    partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp, FILTER_DATABASE, FILTER_TABLES)
     assert partition is not None, f"Expected a row for {s3_location} from HMS select query, but got None"
     expected_count: int = partition_counts[s3_location]
     actual_count: int = partition["partition_count"]
@@ -325,7 +346,7 @@ def test_partition_counts(s3_location: str):
 
 @pytest.mark.parametrize("s3_location", s3_locations)
 def test_partition_fingerprints(s3_location: str):
-    partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp)
+    partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp, FILTER_DATABASE, FILTER_TABLES)
     assert partition is not None, f"Expected a row for {s3_location} from HMS select query, but got None"
 
     # part_names is a comma-separated string of partition names
