@@ -51,12 +51,15 @@ def get_param(name, default=None) -> str:
     Returns:
         Any: The value of the parameter if found, otherwise the default value.
     """
+    return_value = default
     if scenario is not None:
-        return scenario.get_all_variables().get(name, default)
-    value = os.getenv(name, default)
+        return_value = scenario.get_all_variables().get(name, default)
+    else:
+        return_value = os.getenv(name, default)
 
-    logger.info(f"{name}: {value}")
-    return value
+    logger.info(f"{name}: {return_value}")
+
+    return return_value
  
 def get_credential(name, default=None) -> str:
     """
@@ -67,24 +70,27 @@ def get_credential(name, default=None) -> str:
     Returns:
         str: The value of the credential if found, otherwise the default value.
     """
+    return_value = default
     if client is not None:
         secrets = client.get_auth_info(with_secrets=True)["secrets"]
         for secret in secrets:
             if secret["key"] == name:
                 if "value" in secret:
-                    value = secret["value"]
-                    logger.info(f"{name}: *****")
-                    return value
+                    return_value = secret["value"]
                 else:
                     break
-    return default
+    else:
+        return_value = os.getenv(name, default)
+    logger.info(f"{name}: *****")
+         
+    return return_value
 
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 FILTER_DATABASE = get_param('FILTER_DATABASE', "")
 FILTER_TABLES = get_param('FILTER_TABLES', "")
 
 BATCHING_STRATEGY = get_param('BATCHING_STRATEGY', 'balanced_by_partition_size')      # balanced_by_partition_size | by_table_prefix | create_time
-NUMBER_OF_BATCHES = int(get_param('NUMBER_OF_BATCHES', "3"))
+NUMBER_OF_BATCHES = get_param('NUMBER_OF_BATCHES', "3")
 
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
 
@@ -152,10 +158,11 @@ class S3Location(Base):
     def __repr__(self):
         return f"<S3Location(fully_qualified_table_name={self.fully_qualified_table_name}, database_name={self.database_name}, table_name='{self.table_name}', table_type='{self.table_type}', location='{self.location}', has_partitions='{self.has_partitions}', partition_count={self.partition_count}, row_num={self.row_num}, batch={self.batch})>"
 
-def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: int=0, filter_database: str="", filter_tables: str="") -> list[S3Location]:
+def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: str="", filter_database: str="", filter_tables: str="") -> list[S3Location]:
     """
     """
 
+    nof_batches = number_of_batches if number_of_batches else 1
     if batching_strategy not in ['balanced_by_partition_size', 'by_table_prefix', 'create_time']:    
         raise ValueError(f"Unknown batch strategy: {batching_strategy}")
     elif batching_strategy == 'balanced_by_partition_size':
@@ -199,7 +206,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
                             order by r.partition_count desc) as ranked_by_partition_count,
                         dense_rank() over (
                             order by r.prefix) as group_nr_by_prefix,
-                        NTILE({number_of_batches}) over (
+                        NTILE({nof_batches}) over (
                             order by r.last_create_time desc) as batched_by_last_create_time
                     FROM
                         (
