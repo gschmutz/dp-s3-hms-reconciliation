@@ -294,7 +294,7 @@ def do_hms_3x_repair(filter_database: Optional[str] = None, filter_tables: Optio
         database = table["DATABASE_NAME"]
 
         # apply filters it set
-        if filter_database and database != filter_database:
+        if filter_database and database.lower() != filter_database.lower():
             continue
         if filter_tables and table_name.lower() not in filter_tables:
             continue
@@ -311,7 +311,7 @@ def do_hms_3x_repair(filter_database: Optional[str] = None, filter_tables: Optio
     
     conn.close()
 
-# Convert FILTER_TABLE to a list if it's a comma-separated string
+# Convert FILTER_TABLE to a list if it's a comma-separated string and convert to lowercase
 filter_tables_list: list[str] = None
 if FILTER_TABLES:
     filter_tables_list = [tbl.strip().lower() for tbl in FILTER_TABLES.split(",") if tbl.strip()]

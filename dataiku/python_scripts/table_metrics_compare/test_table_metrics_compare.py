@@ -395,11 +395,13 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
                         # check if the table is in the list of S3 locations and if not skip it
                         fully_qualified_table_name = f"{metric.get('schema')}.{metric.get('table_name')}"
                         if fully_qualified_table_name not in s3_location_list["fully_qualified_table_name"].values:
-                            logger.info(f"Skipping table {fully_qualified_table_name} as it is not in the S3 location list")
+                            logger.debug(f"Skipping table {fully_qualified_table_name} as it is not in the S3 location list")
                             continue
 
                         # build key of dictionary with the fully qualified table name
-                        key = f"{metric.get('catalog')}.{metric.get('schema')}.{metric.get('table_name')}"
+                        #key = f"{metric.get('catalog')}.{metric.get('schema')}.{metric.get('table_name')}"
+                        key = f"{metric.get('schema')}.{metric.get('table_name')}"
+
                         timestamp = metric.get('event_time', 0)  # Assuming event_time is in milliseconds
     
                         # Store only the latest value based on timestamp

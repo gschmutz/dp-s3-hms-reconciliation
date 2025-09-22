@@ -1,8 +1,21 @@
 """
-TODO: implement database filter
-      add strategy with prefix
-"""
+This script generates a list of S3 locations for tables in a Hive Metastore, batches them according to a specified strategy, and uploads the resulting CSV file to an S3-compatible storage (MinIO or AWS S3). It supports running inside Dataiku DSS scenarios or as a standalone script, retrieving configuration and credentials from scenario variables or environment variables.
+Main functionalities:
+- Retrieves configuration parameters and credentials from Dataiku scenario variables or environment variables.
+- Connects to the Hive Metastore database via PostgreSQL or Trino.
+- Queries metadata tables to extract table information, including S3 locations, partitioning, and creation times.
+- Supports batching strategies for dividing tables into groups: balanced by partition size, by table prefix, or by creation time.
+- Writes the extracted and batched table metadata to a CSV file.
+- Optionally uploads the CSV file to an S3 bucket.
+Key components:
+- `get_param`: Retrieves configuration parameters.
+- `get_credential`: Retrieves secret credentials.
+- `get_s3_locations_with_batches`: Queries the metastore and returns a list of S3Location objects, batched according to the selected strategy.
+- `replace_vars_in_string`: Utility for variable substitution in strings.
+- S3 upload logic for making the CSV file available in object storage.
+Environment variables and scenario parameters control filtering, batching, database access, and S3 upload settings.
 
+"""
 import select
 import boto3
 import re
