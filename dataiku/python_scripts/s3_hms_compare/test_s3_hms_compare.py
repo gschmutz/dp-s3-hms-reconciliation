@@ -29,6 +29,7 @@ Intended usage:
 import hashlib
 import io
 import os
+import time
 
 import boto3
 import pandas as pd
@@ -310,7 +311,9 @@ max_timestamp = get_latest_timestamp(db_baseline)
 partition_counts = db_baseline.set_index("s3_location")["partition_count"].to_dict()
 partition_fingerprint = db_baseline.set_index("s3_location")["fingerprint"].to_dict()
 
-logger.info("using this timestamp for comparison: " + str(max_timestamp))
+max_timestamp = int(time.time())
+
+logger.info(f"Testing {len(s3_locations)} S3 locations with max timestamp {max_timestamp}")
 
 @pytest.mark.parametrize("s3_location", s3_locations)
 def test_partition_counts(s3_location: str):
