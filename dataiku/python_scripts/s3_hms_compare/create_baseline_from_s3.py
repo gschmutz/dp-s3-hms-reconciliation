@@ -123,11 +123,12 @@ else:
 s3_config = {"service_name": "s3"}
 if S3_ENDPOINT_URL:
     s3_config["endpoint_url"] = S3_ENDPOINT_URL
+    s3_config["verify"] = False  # Disable SSL verification for self-signed certificates
 if AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY:
     s3_config["aws_access_key_id"] = AWS_ACCESS_KEY
     s3_config["aws_secret_access_key"] = AWS_SECRET_ACCESS_KEY   
 
-s3 = boto3.client(**s3_config, verify: False)
+s3 = boto3.client(**s3_config)
 
 Base = declarative_base()
 
