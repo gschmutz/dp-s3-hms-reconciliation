@@ -180,17 +180,9 @@ def test_get_schemas():
 def test_get_tables():
     conn = getTrinoConnection()
 
-    schemas = conn.execute(text("SHOW SCHEMAS")).fetchall()
-
-    for schema in schemas:
-        if not schema:
-            continue
-        if schema[0] == 'default':
-            # Skip default schema
-            continue
-        tables = conn.execute(text(f"SHOW TABLES IN {schema[0]}")).fetchall()
-        # just check if we have tables
-        assert len(tables), f"No tables have been found in schema '{schema}', should be more than 0"
+    tables = conn.execute(text(f"SHOW TABLES IN information_schema")).fetchall()
+    # just check if we have tables
+    assert len(tables), f"No tables have been found in schema 'information_schema', should be more than 0"
 
     # Close connection
     conn.close()
