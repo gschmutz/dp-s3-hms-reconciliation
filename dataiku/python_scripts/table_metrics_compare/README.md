@@ -23,7 +23,7 @@ Set environment variables
 ```bash
 export FILTER_CATALOG=
 export FILTER_SCHEMA=
-export FILTER_TABLE=
+export FILTER_TABLES=
 export FILTER_BATCH=
 
 export TRINO_USER=trino

@@ -15,7 +15,7 @@ Functions:
 - get_credential(name, default=None): Retrieves credentials from Dataiku client secrets or returns default.
 - get_baseline(table): Returns the latest baseline metric for a given table.
 - get_actual_count(table, timestamp_column=None, baseline_timestamp=None): Queries Trino for the actual row count, optionally filtered by timestamp.
-- init_actual_values_from_kafka(filter_catalog=None, filter_schema=None, filter_table=None): Consumes Kafka topic and returns latest metrics for tables, applying optional filters.
+- init_actual_values_from_kafka(filter_catalog=None, filter_schema=None, filter_tables=None): Consumes Kafka topic and returns latest metrics for tables, applying optional filters.
 Tests:
 ------
 - test_trino_availability(): Checks Trino connection availability.
@@ -119,7 +119,7 @@ def get_credential(name, default=None) -> str:
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 FILTER_CATALOG = get_param('FILTER_CATALOG', "")
 FILTER_SCHEMA = get_param('FILTER_SCHEMA', "")
-FILTER_TABLE = get_param('FILTER_TABLE', "")
+FILTER_TABLES = get_param('FILTER_TABLES', "")
 FILTER_BATCH = get_param('FILTER_BATCH', "")
  
 TRINO_USER = get_credential('TRINO_USER', 'trino')
@@ -294,7 +294,7 @@ def get_actual_count(table: str, timestamp_column: Optional[str] = None, baselin
             count = None
     return count
  
-def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_schema: Optional[str] = None, filter_table: Optional[str] = None, filter_batch: Optional[str] = None):
+def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_schema: Optional[str] = None, filter_tables: Optional[str] = None, filter_batch: Optional[str] = None):
     """
     Initializes and returns the latest actual values for tables by consuming messages from a Kafka topic.
     This function reads String-serialized messages from a Kafka topic, optionally filtering by catalog, schema, and table name.
@@ -303,7 +303,7 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
     Args:
         filter_catalog (str, optional): If provided, only messages with this catalog are processed.
         filter_schema (str, optional): If provided, only messages with this schema are processed.
-        filter_table (str, optional): If provided, only messages with this table name are processed.
+        filter_tables (str, optional): If provided, only messages with this table names are processed.
     Returns:
         dict: A dictionary where keys are fully qualified table names (catalog.schema.table_name) and values are dictionaries
               containing the latest timestamp, timestamp_column, value, metric_type, and table_name.
@@ -314,7 +314,7 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
         Closes the Kafka consumer upon completion.
     """
     latest_values: dict[str, dict] = {}
-    logger.info(f"running init_actual_values_from_kafka({filter_catalog},{filter_schema},{filter_table})")
+    logger.info(f"running init_actual_values_from_kafka (filter_catalog={filter_catalog}, filter_schema={filter_schema}, filter_tables={filter_tables})")
  
     # the list of S3 locations with the tables (potentially filtered by batch)
     s3_location_list = get_s3_location_list(filter_batch)
@@ -387,7 +387,7 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
                             continue
                         if filter_schema and metric.get('schema') != filter_schema:
                             continue
-                        if filter_table and metric.get('table_name') != filter_table:
+                        if filter_tables and metric.get('table_name') not in filter_tables:
                             continue
 
                         # check if the table is in the list of S3 locations and if not skip it
@@ -425,7 +425,7 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
     return latest_values
 
 # all the latest values from Kafka (applying a potential filer set via environment variables)
-latest_values = init_actual_values_from_kafka(FILTER_CATALOG, FILTER_SCHEMA, FILTER_TABLE, FILTER_BATCH)
+latest_values = init_actual_values_from_kafka(FILTER_CATALOG, FILTER_SCHEMA, FILTER_TABLES, FILTER_BATCH)
  
 # collection of fully qualified table names
 fully_qualified_table_names = list(latest_values.keys())
