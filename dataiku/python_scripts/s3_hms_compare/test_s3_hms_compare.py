@@ -292,7 +292,7 @@ def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int,
     with src_engine.connect() as conn:
         # TODO: Make end_timestamp optional and configure number of seconds to add
         result = conn.execute(text(f"""
-            SELECT t."TBL_NAME", t."TBL_TYPE", p."partition_count", p."part_names"
+            SELECT t."TBL_NAME", t."TBL_TYPE", COALESCE(p."partition_count",0) AS partition_count, p."part_names"
             FROM (
                 SELECT p."TBL_ID",
                     COUNT(*) AS partition_count,
@@ -301,7 +301,7 @@ def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int,
                 WHERE p."CREATE_TIME" <= {end_timestamp} + 1                 
                 GROUP BY p."TBL_ID"
             ) p
-            JOIN (
+            RIGHT JOIN (
                 SELECT t."TBL_ID",
                     t."CREATE_TIME",
                     t."TBL_NAME",

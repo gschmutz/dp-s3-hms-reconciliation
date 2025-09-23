@@ -69,7 +69,7 @@ def send_allure_results(
     print("------------------SEND-RESULTS------------------")
     headers['X-CSRF-TOKEN'] = csrf_access_token
     response = session.post(
-        f"{allure_server}/allure-docker-service/send-results?project_id={project_id}",
+        f"{allure_server}/allure-docker-service/send-results?project_id={project_id}&force_project_creation=true",
         headers=headers,
         data=json_request_body,
         verify=ssl_verification
