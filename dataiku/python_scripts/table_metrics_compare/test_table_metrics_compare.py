@@ -286,7 +286,7 @@ def get_actual_count(table: str, timestamp_column: Optional[str] = None, baselin
                 '''
             )
         
-        logger.info(f"Executing query: {query}")
+        logger.debug(f"Executing query: {query}")
         try:
             count = conn.execute(query).scalar()
         except Exception as e:
@@ -380,8 +380,6 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
                     post_create_table_metric_step: dict = data["steps"]["post_create_table_metric"]
 
                     if "job_outcome" in post_create_table_metric_step and post_create_table_metric_step["job_outcome"] == "SUCCESS":                   
-#                        logger.info(f"Received message with post_create_table_metric_step: {post_create_table_metric_step['dp_controller_response_message']}")
-
                         metric: dict = json.loads(post_create_table_metric_step["job_exit_message"])
  
                         # apply filters it set
@@ -413,9 +411,9 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
                                     'count': metric.get('count', 0),
                                     'table_name': metric.get('table_name', key)
                                 }
-                                logger.info(f"Updated latest value for {key}: {latest_values[key]}")
+                                logger.debug(f"Updated latest value for {key}: {latest_values[key]}")
                             else:
-                                logger.info(f"Skipped older message for {key}: timestamp {timestamp} <= {latest_values[key]['timestamp']}")
+                                logger.debug(f"Skipped older message for {key}: timestamp {timestamp} <= {latest_values[key]['timestamp']}")
  
     except KeyboardInterrupt:
         logger.info("Stopping consumer.")
@@ -463,5 +461,5 @@ def test_value_compare(fully_qualified_table_name):
     event_time = get_baseline(fully_qualified_table_name)['timestamp']
     actual_count = get_actual_count(fully_qualified_table_name, timestamp_column=timestamp_column, baseline_timestamp=event_time)
  
-    assert baseline_count == actual_count, f"Mismatch in table '{fully_qualified_table_name}': {baseline_count} != {actual_count}"
+    assert baseline_count == actual_count, f"Mismatch in table '{fully_qualified_table_name}': Baseline Count from last job processing ({baseline_count}) does not match actual count retrieved from Trino ({actual_count})"
  
