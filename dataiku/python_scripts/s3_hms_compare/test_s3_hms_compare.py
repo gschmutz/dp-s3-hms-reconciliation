@@ -35,13 +35,13 @@ Exceptions:
 import hashlib
 import io
 import os
-import time
 
 import boto3
 import pandas as pd
 import pytest
 import logging
 from sqlalchemy import create_engine, inspect, text
+from datetime import datetime, timezone
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -112,8 +112,8 @@ def get_credential(name, default=None) -> str:
     return return_value
 
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
-FILTER_DATABASE = get_param('FILTER_DATABASE', "")
-FILTER_TABLES = get_param('FILTER_TABLES', "")
+#FILTER_DATABASE = get_param('FILTER_DATABASE', "")
+#FILTER_TABLES = get_param('FILTER_TABLES', "")
 FILTER_BATCH = get_param('FILTER_BATCH', "")
 
 # either postgresql or trino
@@ -258,7 +258,7 @@ def get_latest_timestamp(db_baseline):
 
     return latest_timestamp
 
-def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int, filter_database=None, filter_tables=None):
+def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int):
     """
     Retrieves the count and names of partitions for a Hive Metastore table located at the specified S3 location,
     with partition creation times up to the given end timestamp.
@@ -280,28 +280,11 @@ def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int,
         part_names_expr = """array_join(array_agg(p."PART_NAME" ORDER BY p."PART_NAME"), ',')"""
         catalog_name = HMS_TRINO_CATALOG + "."
 
-    if filter_database and filter_tables:
-        filter_where_clause = f"AND d.\"NAME\" = '{filter_database}' AND t.\"TBL_NAME\" IN ({filter_tables})"
-    elif filter_database:
-        filter_where_clause = f"AND d.\"NAME\" = '{filter_database}'"
-    elif filter_tables:
-        filter_where_clause = f"AND t.\"TBL_NAME\" IN ({filter_tables})"
-    else:
-        filter_where_clause = ""    
-
     with src_engine.connect() as conn:
         # TODO: Make end_timestamp optional and configure number of seconds to add
-        result = conn.execute(text(f"""
-            SELECT t."TBL_NAME", t."TBL_TYPE", COALESCE(p."partition_count",0) AS partition_count, p."part_names"
+        sql = (text(f"""
+            SELECT t."TBL_NAME", t."TBL_TYPE", COALESCE(p."partition_count",0) AS partition_count, COALESCE(p."part_names", '') AS part_names
             FROM (
-                SELECT p."TBL_ID",
-                    COUNT(*) AS partition_count,
-                    {part_names_expr}   part_names
-                FROM {catalog_name}public."PARTITIONS" p
-                WHERE p."CREATE_TIME" <= {end_timestamp} + 1                 
-                GROUP BY p."TBL_ID"
-            ) p
-            RIGHT JOIN (
                 SELECT t."TBL_ID",
                     t."CREATE_TIME",
                     t."TBL_NAME",
@@ -309,11 +292,20 @@ def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int,
                 FROM {catalog_name}public."TBLS" t
                 JOIN {catalog_name}public."DBS" d ON t."DB_ID" = d."DB_ID"
                 JOIN {catalog_name}public."SDS" s ON t."SD_ID" = s."SD_ID"
-                WHERE s."LOCATION" = '{s3_location}'
-                {filter_where_clause}
+                WHERE s."LOCATION" = '{s3_location}'                    
             ) t
+            LEFT JOIN (
+                SELECT p."TBL_ID",
+                    COUNT(*) AS partition_count,
+                    {part_names_expr}   part_names
+                FROM {catalog_name}public."PARTITIONS" p
+                WHERE p."CREATE_TIME" <= {end_timestamp} + 1                 
+                GROUP BY p."TBL_ID"
+            ) p
             ON t."TBL_ID" = p."TBL_ID"
         """))
+        #print (sql)
+        result = conn.execute(sql)
         row = result.mappings().one_or_none()  # strict: must return exactly one row
         return row
 
@@ -329,27 +321,34 @@ partition_counts = db_baseline.set_index("s3_location")["partition_count"].to_di
 partition_fingerprint = db_baseline.set_index("s3_location")["fingerprint"].to_dict()
 
 # set the timestamp to use for the query from HMS
-if not USE_BASELINE_TIMESTAMP:
+if USE_BASELINE_TIMESTAMP:
     max_timestamp = get_latest_timestamp(db_baseline)
 else:
-    max_timestamp = int(time.time())
+    max_timestamp = datetime.now(timezone.utc).timestamp()
 
 logger.info(f"Testing {len(s3_locations)} S3 locations with max timestamp {max_timestamp}")
 
 @pytest.mark.parametrize("s3_location", s3_locations)
 def test_partition_counts(s3_location: str):
-    partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp, FILTER_DATABASE, FILTER_TABLES)
+    partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp)
     assert partition is not None, f"Expected a row for {s3_location} from HMS select query, but got None"
+
+    logger.info(f"Partition details for {s3_location}: {partition}")
+
     expected_count: int = partition_counts[s3_location]
     actual_count: int = partition["partition_count"]
     assert expected_count == actual_count, f"Partition count mismatch for {s3_location} in Hive Metastore: expected {expected_count} (S3), but got {actual_count} (HMS)"
 
 @pytest.mark.parametrize("s3_location", s3_locations)
 def test_partition_fingerprints(s3_location: str):
-    partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp, FILTER_DATABASE, FILTER_TABLES)
+    partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp)
     assert partition is not None, f"Expected a row for {s3_location} from HMS select query, but got None"
 
-    # part_names is a comma-separated string of partition names
-    fingerprint = hashlib.sha256(partition["part_names"].encode('utf-8')).hexdigest()
+    logger.info(f"Partition details for {s3_location}: {partition}")
+    fingerprint = ""
+    if partition["partition_count"] > 0: 
+        fingerprint = hashlib.sha256(partition["part_names"].encode('utf-8')).hexdigest()
 
-    assert partition_fingerprint[s3_location] == fingerprint, f"Partition fingerprint mismatch for {s3_location} in Hive Metastore: expected {partition_fingerprint[s3_location]} (S3), but got {fingerprint} (HMS)"
+        assert partition_fingerprint[s3_location] == fingerprint, f"Partition fingerprint mismatch for {s3_location} in Hive Metastore: expected {partition_fingerprint[s3_location]} (S3), but got {fingerprint} (HMS)"
+    else:
+        assert True    

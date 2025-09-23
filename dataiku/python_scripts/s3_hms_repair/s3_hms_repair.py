@@ -234,9 +234,22 @@ def get_tables(filter_database: Optional[str] = None, filter_tables: Optional[li
                t."TBL_ID",
                t."CREATE_TIME",
                t."TBL_NAME",
-               t."TBL_TYPE"
+               t."TBL_TYPE",
+               CASE
+                    WHEN COALESCE(pk.has_partitions, 0) >= 1 then 'Y'
+                    ELSE 'N'
+               END as has_partitions
             FROM {catalog_name}public."TBLS" t
             JOIN {catalog_name}public."DBS" d ON t."DB_ID" = d."DB_ID"
+            LEFT JOIN (
+                SELECT
+                    pk."TBL_ID",
+                    GREATEST(SIGN(COUNT(*)), 0) as has_partitions
+                FROM
+                    {catalog_name}public."PARTITION_KEYS" pk
+                GROUP BY
+                    pk."TBL_ID") pk 
+                ON t."TBL_ID" = pk."TBL_ID"            
             {filter_where_clause}
         """
 
@@ -259,7 +272,8 @@ def do_trino_repair(filter_database: Optional[str] = None, filter_tables: Option
     for _, table in filtered_tables.iterrows():
         table_name = table["TBL_NAME"]
         database = table["DATABASE_NAME"]
-
+        has_partitions = table["has_partitions"]
+       
         # apply filters it set
         if filter_database and database.lower() != filter_database.lower():
             continue
@@ -267,7 +281,9 @@ def do_trino_repair(filter_database: Optional[str] = None, filter_tables: Option
             continue
 
         with trino_engine.connect() as conn:
-
+            if has_partitions == "N":
+                logger.info(f"Skipping table {database}.{table_name} as it has no partitions")
+                continue
             if not DRY_RUN:
                 logger.info(f"Executing repairing table {database}.{table_name} via Trino") 
                 conn.execute(text(f"call {TRINO_CATALOG}.system.sync_partition_metadata('{database}', '{table_name}', 'FULL')"))
@@ -292,6 +308,7 @@ def do_hms_3x_repair(filter_database: Optional[str] = None, filter_tables: Optio
 
         table_name = table["TBL_NAME"]
         database = table["DATABASE_NAME"]
+        has_partitions = table["has_partitions"]
 
         # apply filters it set
         if filter_database and database.lower() != filter_database.lower():
@@ -300,6 +317,9 @@ def do_hms_3x_repair(filter_database: Optional[str] = None, filter_tables: Optio
             continue
 
         # execute MSCK REPAIR
+        if has_partitions == "N":
+            logger.info(f"Skipping table {database}.{table_name} as it has no partitions")
+            continue
         if not DRY_RUN:
             logger.info(f"Executing repairing table {database}.{table_name} via HiveServer2") 
 

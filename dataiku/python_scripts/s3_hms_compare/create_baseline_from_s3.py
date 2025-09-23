@@ -202,16 +202,16 @@ def get_s3_locations_for_tables(filter_database=None, filter_tables=None):
                 t."TBL_TYPE" as table_type,
                 s."LOCATION" as location,
                 CASE
-                    WHEN pk.has_partitions >= 1 then 'Y'
+                    WHEN COALESCE(pk.has_partitions, 0) >= 1 then 'Y'
                     ELSE 'N'
                 END as has_partitions,
                 COUNT(p."PART_ID") as partition_count
             FROM
                 {catalog_name}public."TBLS" t
-            JOIN public."DBS" d on
-                t."DB_ID" = d."DB_ID"
-            JOIN {catalog_name}public."SDS" s on
-                t."SD_ID" = s."SD_ID"
+            JOIN public."DBS" d 
+                ON t."DB_ID" = d."DB_ID"
+            JOIN {catalog_name}public."SDS" s 
+                ON t."SD_ID" = s."SD_ID"
             LEFT JOIN (
                 SELECT
                     pk."TBL_ID",
@@ -219,10 +219,10 @@ def get_s3_locations_for_tables(filter_database=None, filter_tables=None):
                 FROM
                     {catalog_name}public."PARTITION_KEYS" pk
                 GROUP BY
-                    pk."TBL_ID") pk on
-                t."TBL_ID" = pk."TBL_ID"
-            LEFT JOIN {catalog_name}public."PARTITIONS" p on
-                t."TBL_ID" = p."TBL_ID"
+                    pk."TBL_ID") pk 
+                ON t."TBL_ID" = pk."TBL_ID"
+            LEFT JOIN {catalog_name}public."PARTITIONS" p 
+                ON t."TBL_ID" = p."TBL_ID"
             {filter_where_clause}
             GROUP BY
                 d."NAME",
@@ -276,9 +276,11 @@ def get_partition_info(s3a_url):
                 logger.info(f"Found new latest partition: {key} (last modified: {obj['LastModified']})")
                 latest_ts = obj["LastModified"]                
 
-    sorted_partitions = sorted(partitions)
-    joined = ",".join(sorted_partitions)
-    fingerprint = hashlib.sha256(joined.encode('utf-8')).hexdigest()
+    fingerprint = ""
+    if len(partitions) > 0:
+        sorted_partitions = sorted(partitions)
+        joined = ",".join(sorted_partitions)
+        fingerprint = hashlib.sha256(joined.encode('utf-8')).hexdigest()
                       
     return {
         "s3_location": s3a_url,

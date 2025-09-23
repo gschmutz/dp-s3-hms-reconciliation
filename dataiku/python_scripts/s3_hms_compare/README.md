@@ -26,7 +26,7 @@ export HMS_TRINO_HOST=localhost
 export HMS_TRINO_PORT=28082
 export HMS_TRINO_CATALOG=hive_metastore_db
 
-export S3_UPLOAD_ENABLED=false
+export S3_UPLOAD_ENABLED=true
 export AWS_ACCESS_KEY_ID=admin
 export AWS_SECRET_ACCESS_KEY=abc123abc123
 export S3_ENDPOINT_URL=http://localhost:9000
@@ -67,7 +67,7 @@ export AWS_SECRET_ACCESS_KEY=abc123abc123
 export S3_ENDPOINT_URL=http://localhost:9000
 export S3_ADMIN_BUCKET=admin-bucket
 export BASELINE_OBJECT_KEY=baseline_s3.csv
-export S3_LOCATION_LIST_OBJECT_NAME=location_s3.csv
+export S3_LOCATION_LIST_OBJECT_NAME=s3_locations.csv
 ```
 
 Run `pytest`
