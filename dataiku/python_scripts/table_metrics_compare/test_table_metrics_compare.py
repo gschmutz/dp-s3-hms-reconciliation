@@ -421,7 +421,9 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
         logger.error(f"Error {ex}")
     finally:
         consumer.close()
-        logger.info(f"init_actual_values_from_kafka() completed. Found {len(latest_values)} tables: {list(latest_values.keys())}")
+        for table, values in latest_values.items():
+            logger.info(f"Table: {table}, Values: {values['timestamp']}, {values['count']}, {values['timestamp_column']}")
+        #logger.info(f"init_actual_values_from_kafka() completed. Found {len(latest_values)} tables: {list(latest_values.keys())}")
     return latest_values
 
 # all the latest values from Kafka (applying a potential filer set via environment variables)
@@ -461,5 +463,5 @@ def test_value_compare(fully_qualified_table_name):
     event_time = get_baseline(fully_qualified_table_name)['timestamp']
     actual_count = get_actual_count(fully_qualified_table_name, timestamp_column=timestamp_column, baseline_timestamp=event_time)
  
-    assert baseline_count == actual_count, f"Mismatch in table '{fully_qualified_table_name}': Baseline Count from last job processing ({baseline_count}) does not match actual count retrieved from Trino ({actual_count})"
+    assert baseline_count == actual_count, f"Mismatch in table '{fully_qualified_table_name}': Baseline Count from last job processing ({baseline_count}) at timestamp ({timestamp_column}={event_time}) does not match actual count retrieved from Trino ({actual_count})"
  
