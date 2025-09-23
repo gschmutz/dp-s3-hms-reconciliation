@@ -77,6 +77,7 @@ def send_allure_results(
     print("STATUS CODE:")
     print(response.status_code)
     print("RESPONSE:")
+    print(response.content)
     json_response_body = json.loads(response.content)
     print(json.dumps(json_response_body, indent=4, sort_keys=True))
 

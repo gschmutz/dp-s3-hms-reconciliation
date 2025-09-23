@@ -333,7 +333,7 @@ def test_partition_counts(s3_location: str):
     partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp)
     assert partition is not None, f"Expected a row for {s3_location} from HMS select query, but got None"
 
-    logger.info(f"Partition details for {s3_location}: {partition}")
+    logger.debug(f"Partition details for {s3_location}: {partition}")
 
     expected_count: int = partition_counts[s3_location]
     actual_count: int = partition["partition_count"]
@@ -344,7 +344,7 @@ def test_partition_fingerprints(s3_location: str):
     partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp)
     assert partition is not None, f"Expected a row for {s3_location} from HMS select query, but got None"
 
-    logger.info(f"Partition details for {s3_location}: {partition}")
+    logger.debug(f"Partition details for {s3_location}: {partition}")
     fingerprint = ""
     if partition["partition_count"] > 0: 
         fingerprint = hashlib.sha256(partition["part_names"].encode('utf-8')).hexdigest()
