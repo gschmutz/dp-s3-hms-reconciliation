@@ -44,7 +44,7 @@ export AWS_ACCESS_KEY_ID=admin
 export AWS_SECRET_ACCESS_KEY=abc123abc123
 export S3_ENDPOINT_URL=http://localhost:9000
 export S3_ADMIN_BUCKET=admin-bucket
-export S3_LOCATION_LIST_OBJECT_NAME=s3_locations_flight_db.csv
+export S3_LOCATION_LIST_OBJECT_NAME=s3_locations.csv
 ```
 
 ```json
