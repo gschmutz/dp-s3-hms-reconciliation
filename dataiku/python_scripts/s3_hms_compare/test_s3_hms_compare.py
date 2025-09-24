@@ -299,7 +299,7 @@ def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int)
                     COUNT(*) AS partition_count,
                     {part_names_expr}   part_names
                 FROM {catalog_name}public."PARTITIONS" p
-                WHERE p."CREATE_TIME" <= {end_timestamp} + 1                 
+                WHERE p."CREATE_TIME" < {end_timestamp}                
                 GROUP BY p."TBL_ID"
             ) p
             ON t."TBL_ID" = p."TBL_ID"
