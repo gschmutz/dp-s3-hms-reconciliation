@@ -104,11 +104,6 @@ DRY_RUN = get_param('DRY_RUN', 'true').lower() in ('true', '1', 't')
 # either postgresql or trino
 HMS_VERSION = get_param('HMS_VERSION', '3')                       # either "3" or "4"
 
-HMS_HOST = get_param('HMS_HOST', 'hive-metastore')
-HMS_PORT = get_param('HMS_PORT', '10000')
-HMS_USER = get_credential('HMS_USER', 'hive')
-HMS_PASSWORD = get_credential('HMS_PASSWORD', 'abc123!')
-
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
 
 HMS_DB_USER = get_credential('HMS_DB_USER', 'hive')
@@ -123,6 +118,11 @@ HMS_TRINO_HOST = get_param('HMS_TRINO_HOST', 'localhost')
 HMS_TRINO_PORT = get_param('HMS_TRINO_PORT', '28082')
 HMS_TRINO_CATALOG = get_param('HMS_TRINO_CATALOG', 'minio')
 HMS_TRINO_USE_SSL = get_param('HMS_TRINO_USE_SSL', 'true').lower() in ('true', '1', 't')
+
+HMS_HOST = get_param('HMS_HOST', 'hive-server')
+HMS_PORT = get_param('HMS_PORT', '10000')
+HMS_USER = get_credential('HMS_USER', 'hive')
+HMS_PASSWORD = get_credential('HMS_PASSWORD', 'abc123!')
 
 TRINO_USER = get_credential('TRINO_USER', 'trino')
 TRINO_PASSWORD = get_credential('TRINO_PASSWORD', '')
