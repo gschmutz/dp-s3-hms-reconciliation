@@ -121,8 +121,8 @@ HMS_TRINO_USE_SSL = get_param('HMS_TRINO_USE_SSL', 'true').lower() in ('true', '
 
 HMS_HOST = get_param('HMS_HOST', 'hive-server')
 HMS_PORT = get_param('HMS_PORT', '10000')
-HMS_USER = get_credential('HMS_USER', 'hive')
-HMS_PASSWORD = get_credential('HMS_PASSWORD', 'abc123!')
+HMS_USER = get_param('HMS_USER', 'hive')
+HMS_PASSWORD = get_param('HMS_PASSWORD', 'abc123!')
 
 TRINO_USER = get_param('TRINO_USER', 'trino')
 TRINO_PASSWORD = get_param('TRINO_PASSWORD', '')
