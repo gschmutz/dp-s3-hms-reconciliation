@@ -254,7 +254,7 @@ def get_partition_info(s3a_url):
     s3_url = s3a_url.replace("s3a://", "s3://")
     parsed = urlparse(s3_url)
     bucket = parsed.netloc
-    prefix = parsed.path.lstrip("/")
+    prefix = parsed.path.lstrip("/") + "/"
 
     print(f"Analyzing S3 location: bucket={bucket}, prefix={prefix}")
 
@@ -267,6 +267,7 @@ def get_partition_info(s3a_url):
     for page in page_iterator:
         for obj in page.get("Contents", []):
             key = obj["Key"]
+#            print("key: " + key)
             # Detect partition-style folder structure like col=value
             parts = key[len(prefix):].strip("/").split("/")
             partition_parts = [p for p in parts if "=" in p]
