@@ -292,7 +292,7 @@ def get_partition_info(s3a_url):
 
 with open(S3_BASELINE_OBJECT_NAME, "w") as f:
     # Print CSV header
-    print("fully_qualified_table_name,database_name,table_name,s3_location,partition_count,fingerprint,timestamp", file=f)
+    print("fully_qualified_table_name,database_name,table_name,has_partitions,s3_location,partition_count,fingerprint,timestamp", file=f)
 
     print(f"Getting S3 locations for tables with filter database='{FILTER_DATABASE}' and filter tables='{FILTER_TABLES}'")
                 
@@ -302,7 +302,7 @@ with open(S3_BASELINE_OBJECT_NAME, "w") as f:
     for s3_location in s3_locations:
         
         info = get_partition_info(f"{s3_location.location}")
-        print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{info['s3_location']},{info['partition_count']},{info['fingerprint']},{info['timestamp']}", file=f)
+        print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{s3_location.has_partitions},{info['s3_location']},{info['partition_count']},{info['fingerprint']},{info['timestamp']}", file=f)
 
 # upload the file to S3 to make it available
 if S3_UPLOAD_ENABLED:
