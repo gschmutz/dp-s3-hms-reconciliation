@@ -258,6 +258,18 @@ def get_latest_timestamp(db_baseline):
 
     return latest_timestamp
 
+def get_latest_timestamp_for_location(db_baseline, s3_location: str):
+    """
+    Returns the latest timestamp for a S3 location from the 'timestamp' column in the provided DataFrame.
+    Args:
+        db_baseline (pandas.DataFrame): DataFrame containing a 'timestamp' column.
+    Returns:
+        The maximum value found in the 'timestamp' column, representing the latest timestamp.
+    """
+    latest_timestamp = db_baseline[db_baseline["s3_location"] == s3_location]['timestamp'].max()
+
+    return latest_timestamp
+
 def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int):
     """
     Retrieves the count and names of partitions for a Hive Metastore table located at the specified S3 location,
@@ -304,7 +316,7 @@ def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int)
             ) p
             ON t."TBL_ID" = p."TBL_ID"
         """))
-        #print (sql)
+        print (sql)
         result = conn.execute(sql)
         row = result.mappings().one_or_none()  # strict: must return exactly one row
         return row
@@ -320,16 +332,15 @@ s3_locations = db_baseline["s3_location"].tolist()
 partition_counts = db_baseline.set_index("s3_location")["partition_count"].to_dict()
 partition_fingerprint = db_baseline.set_index("s3_location")["fingerprint"].to_dict()
 
-# set the timestamp to use for the query from HMS
-if USE_BASELINE_TIMESTAMP:
-    max_timestamp = get_latest_timestamp(db_baseline)
-else:
-    max_timestamp = datetime.now(timezone.utc).timestamp()
+# retrive the current timestamp as unix timestamp
+now_timestamp = datetime.now(timezone.utc).timestamp()
 
-logger.info(f"Testing {len(s3_locations)} S3 locations with max timestamp {max_timestamp}")
+logger.info(f"Testing {len(s3_locations)} S3 locations")
 
 @pytest.mark.parametrize("s3_location", s3_locations)
 def test_partition_counts(s3_location: str):
+    max_timestamp = get_latest_timestamp_for_location(db_baseline, s3_location) if USE_BASELINE_TIMESTAMP else now_timestamp
+    print(f"Using max_timestamp {max_timestamp} for location {s3_location}")
     partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp)
     assert partition is not None, f"Expected a row for {s3_location} from HMS select query, but got None"
 
@@ -337,10 +348,11 @@ def test_partition_counts(s3_location: str):
 
     expected_count: int = partition_counts[s3_location]
     actual_count: int = partition["partition_count"]
-    assert expected_count == actual_count, f"Partition count mismatch for {s3_location} in Hive Metastore: expected {expected_count} (S3), but got {actual_count} (HMS)"
+    assert expected_count == actual_count, f"Partition count mismatch for {s3_location} in Hive Metastore: expected {expected_count} (S3), but got {actual_count} (HMS), difference of {expected_count - actual_count} at timestamp {max_timestamp}"
 
 @pytest.mark.parametrize("s3_location", s3_locations)
 def test_partition_fingerprints(s3_location: str):
+    max_timestamp = get_latest_timestamp_for_location(db_baseline, s3_location) if USE_BASELINE_TIMESTAMP else now_timestamp
     partition = get_hms_partitions_count_and_partnames(s3_location, max_timestamp)
     assert partition is not None, f"Expected a row for {s3_location} from HMS select query, but got None"
 
@@ -349,6 +361,6 @@ def test_partition_fingerprints(s3_location: str):
     if partition["partition_count"] > 0: 
         fingerprint = hashlib.sha256(partition["part_names"].encode('utf-8')).hexdigest()
 
-        assert partition_fingerprint[s3_location] == fingerprint, f"Partition fingerprint mismatch for {s3_location} in Hive Metastore: expected {partition_fingerprint[s3_location]} (S3), but got {fingerprint} (HMS)"
+        assert partition_fingerprint[s3_location] == fingerprint, f"Partition fingerprint mismatch for {s3_location} in Hive Metastore: expected {partition_fingerprint[s3_location]} (S3), but got {fingerprint} (HMS) at timestamp {max_timestamp}"
     else:
         assert True    
