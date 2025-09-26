@@ -2,7 +2,7 @@ import pytest
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from create_locations_list import replace_vars_in_string
+from util import replace_vars_in_string
 
 def test_replace_single_variable():
     s = "file_{database}.csv"
