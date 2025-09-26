@@ -149,7 +149,7 @@ consumer_conf_plaintext = {
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_s3_location_list(batch: str, stage: str) -> pd.DataFrame:
+def get_s3_location_list(s3: boto3.client, batch: str, stage: str) -> pd.DataFrame:
     """
     Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
     Parameters:
@@ -268,7 +268,7 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
     logger.info(f"running init_actual_values_from_kafka (filter_catalog={filter_catalog}, filter_schema={filter_schema}, filter_tables={filter_tables})")
  
     # the list of S3 locations with the tables (potentially filtered by batch)
-    s3_location_list = get_s3_location_list(filter_batch, filter_stage)
+    s3_location_list = get_s3_location_list(s3, filter_batch, filter_stage)
 
     # read from kafka
     if KAFKA_SECURITY_PROTOCOL == 'SSL':

@@ -8,6 +8,8 @@ This sub-project contains the logic to repair the Hive Metastore. It works for b
 Set environment variables
 
 ```bash
+export DATAIKU_ENV=pz
+
 export FILTER_DATABASE=
 export FILTER_TABLES=
 export FILTER_BATCH=
@@ -31,7 +33,7 @@ export AWS_ACCESS_KEY_ID=admin
 export AWS_SECRET_ACCESS_KEY=abc123abc123
 export S3_ENDPOINT_URL=http://localhost:9000
 export S3_ADMIN_BUCKET=admin-bucket
-export S3_BASELINE_OBJECT_NAME=baseline_s3.csv
+export S3_BASELINE_OBJECT_NAME={zone}_baseline_s3.csv
 ```
 
 Run create baseline
@@ -43,7 +45,8 @@ python create_baseline_from_s3.py
 ## Run the comparision
 
 ```bash
-#export FILTER_DATABASE=
+export DATAIKU_ENV=pz
+export FILTER_DATABASE=flight_db
 #export FILTER_TABLES=
 export FILTER_BATCH=
 export FILTER_STAGE=
@@ -67,8 +70,8 @@ export AWS_ACCESS_KEY_ID=admin
 export AWS_SECRET_ACCESS_KEY=abc123abc123
 export S3_ENDPOINT_URL=http://localhost:9000
 export S3_ADMIN_BUCKET=admin-bucket
-export BASELINE_OBJECT_KEY=baseline_s3.csv
-export S3_LOCATION_LIST_OBJECT_NAME=s3_locations.csv
+export S3_BASELINE_OBJECT_NAME={zone}_baseline_s3.csv
+export S3_LOCATION_LIST_OBJECT_NAME={zone}_s3_locations_{database}.csv
 ```
 
 Run `pytest`

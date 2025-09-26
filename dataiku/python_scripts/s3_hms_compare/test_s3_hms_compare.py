@@ -44,14 +44,17 @@ import logging
 from sqlalchemy import create_engine, inspect, text
 from datetime import datetime, timezone
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from util import get_param, get_credential, replace_vars_in_string
+from util import get_param, get_credential, get_zone_name, replace_vars_in_string, get_s3_location_list
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+ZONE = get_zone_name(upper=True)
+
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
-#FILTER_DATABASE = get_param('FILTER_DATABASE', "")
+ENV = get_param('ENV', 'UAT', upper=True)
+FILTER_DATABASE = get_param('FILTER_DATABASE', "")
 #FILTER_TABLES = get_param('FILTER_TABLES', "")
 FILTER_BATCH = get_param('FILTER_BATCH', "")
 FILTER_STAGE = get_param('FILTER_STAGE', "")
@@ -78,8 +81,11 @@ HMS_TRINO_USE_SSL = get_param('HMS_TRINO_USE_SSL', 'true').lower() in ('true', '
 ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
-BASELINE_OBJECT_KEY = get_param('S3_BASELINE_OBJECT_NAME', 'baseline_s3.csv')
+S3_BASELINE_OBJECT_NAME = get_param('S3_BASELINE_OBJECT_NAME', 'baseline_s3.csv')
+S3_BASELINE_OBJECT_NAME = replace_vars_in_string(S3_BASELINE_OBJECT_NAME, { "database": FILTER_DATABASE.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
+
 S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
+S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "database": FILTER_DATABASE.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
 
 # Construct connection URLs
 hms_db_url = f'postgresql://{HMS_DB_USER}:{HMS_DB_PASSWORD}@{HMS_DB_HOST}:{HMS_DB_PORT}/{HMS_DB_DBNAME}'
@@ -113,49 +119,7 @@ if ENDPOINT_URL:
 
 s3 = boto3.client(**s3_config)
 
-def get_s3_location_list(batch: str, stage: str) -> pd.DataFrame:
-    """
-    Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
-    Parameters:
-        batch (str): The name of the batch to filter the locations by. If provided, only locations matching this batch are returned.
-        stage (str): The name of the stage to filter the locations by. If provided, only locations matching this stage are returned.
-    Returns:
-        pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified batch.
-    Raises:
-        ValueError: If the CSV file retrieved from S3 is empty.
-    Notes:
-        - The function expects the CSV file to be accessible via the global S3_ADMIN_BUCKET and S3_LOCATION_LIST_OBJECT_NAME.
-        - The function assumes the existence of a global `s3` client and required imports (`io`, `pandas as pd`).
-    """
-
-    # Read the object
-    response = s3.get_object(Bucket=S3_ADMIN_BUCKET, Key=S3_LOCATION_LIST_OBJECT_NAME)
-
-    # `response['Body'].read()` returns bytes, decode to string
-    csv_string = response['Body'].read().decode('utf-8')
-
-    # Debug: print the content
-    logger.info(f"CSV content length: {len(csv_string)}")
-    logger.info(f"First 100 chars: {csv_string[:100]}")
-
-    # Add error handling
-    if not csv_string.strip():
-        raise ValueError("CSV file is empty")
-
-    # Wrap the string in a StringIO buffer
-    csv_buffer = io.StringIO(csv_string)
-
-    s3_location_list = pd.read_csv(csv_buffer)
-    if batch:
-        s3_location_list = s3_location_list[s3_location_list["batch"] == int(batch)]
-        logger.info(s3_location_list)
-    if stage:    
-        s3_location_list = s3_location_list[s3_location_list["stage"] == int(stage)]
-        logger.info(s3_location_list)
-
-    return s3_location_list
-
-def get_s3_partitions_baseline():
+def get_s3_partitions_baseline(s3_baseline_object_name: str):
     """
     Reads a CSV file from an S3 response object, decodes its content, and loads it into a pandas DataFrame.
     The function expects a global variable `response` containing the S3 response with a 'Body' attribute.
@@ -167,7 +131,7 @@ def get_s3_partitions_baseline():
     """
 
     # Read the object
-    response = s3.get_object(Bucket=S3_ADMIN_BUCKET, Key=BASELINE_OBJECT_KEY)
+    response = s3.get_object(Bucket=S3_ADMIN_BUCKET, Key=s3_baseline_object_name)
 
     # `response['Body'].read()` returns bytes, decode to string
     csv_string = response['Body'].read().decode('utf-8')
@@ -184,8 +148,8 @@ def get_s3_partitions_baseline():
     csv_buffer = io.StringIO(csv_string)
 
     db_baseline = pd.read_csv(csv_buffer)
-    
-    s3_location_list = get_s3_location_list(FILTER_BATCH, FILTER_STAGE)
+
+    s3_location_list = get_s3_location_list(s3, S3_ADMIN_BUCKET, S3_LOCATION_LIST_OBJECT_NAME, FILTER_BATCH, FILTER_STAGE)
     db_baseline = db_baseline[db_baseline["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
 
     return db_baseline
@@ -269,7 +233,7 @@ def quote_ident(name: str, dialect):
     return dialect.identifier_preparer.quote(name)
 
 # retrieve the baseline (optionally only for a certain batch)
-db_baseline = get_s3_partitions_baseline()
+db_baseline = get_s3_partitions_baseline(S3_BASELINE_OBJECT_NAME)
 
 # Dynamically get the s3 locations from the baseline file
 s3_locations = db_baseline["s3_location"].tolist()

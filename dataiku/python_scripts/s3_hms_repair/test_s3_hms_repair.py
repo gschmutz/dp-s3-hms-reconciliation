@@ -27,13 +27,16 @@ from pyhive import hive
 from typing import Optional
 from sqlalchemy import create_engine, text
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from util import get_param, get_credential, replace_vars_in_string
+from util import get_param, get_credential, replace_vars_in_string, get_zone_name, get_s3_location_list
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+ZONE = get_zone_name(upper=True)
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
+ENV = get_param('ENV', 'UAT', upper=True)
+
 FILTER_DATABASE = get_param('FILTER_DATABASE', None)
 FILTER_TABLES = get_param('FILTER_TABLES', None)
 FILTER_BATCH = get_param('FILTER_BATCH', "")                    # either all or a specific batch number, if empty it will not use the batch filter at all
@@ -76,6 +79,7 @@ ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
 S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
+S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "database": FILTER_DATABASE.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
 
 # Construct connection URLs
 hms_db_url = f'postgresql://{HMS_DB_USER}:{HMS_DB_PASSWORD}@{HMS_DB_HOST}:{HMS_DB_PORT}/{HMS_DB_DBNAME}'
@@ -113,48 +117,6 @@ if ENDPOINT_URL:
     s3_config["endpoint_url"] = ENDPOINT_URL
 
 s3 = boto3.client(**s3_config)
-
-def get_s3_location_list(batch: str, stage: str) -> pd.DataFrame:
-    """
-    Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
-    Parameters:
-        batch (str): The name of the batch to filter the locations by. If provided, only locations matching this batch are returned.
-        stage (str): The name of the stage to filter the locations by. If provided, only locations matching this stage are returned.
-    Returns:
-        pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified batch.
-    Raises:
-        ValueError: If the CSV file retrieved from S3 is empty.
-    Notes:
-        - The function expects the CSV file to be accessible via the global S3_ADMIN_BUCKET and S3_LOCATION_LIST_OBJECT_NAME.
-        - The function assumes the existence of a global `s3` client and required imports (`io`, `pandas as pd`).
-    """
-
-    # Read the object
-    response = s3.get_object(Bucket=S3_ADMIN_BUCKET, Key=S3_LOCATION_LIST_OBJECT_NAME)
-
-    # `response['Body'].read()` returns bytes, decode to string
-    csv_string = response['Body'].read().decode('utf-8')
-
-    # Debug: print the content
-    logger.info(f"CSV content length: {len(csv_string)}")
-    logger.info(f"First 100 chars: {csv_string[:100]}")
-
-    # Add error handling
-    if not csv_string.strip():
-        raise ValueError("CSV file is empty")
-
-    # Wrap the string in a StringIO buffer
-    csv_buffer = io.StringIO(csv_string)
-
-    s3_location_list = pd.read_csv(csv_buffer)
-    if batch:
-        s3_location_list = s3_location_list[s3_location_list["batch"] == int(batch)]
-        logger.info(s3_location_list)
-    if stage:    
-        s3_location_list = s3_location_list[s3_location_list["stage"] == int(stage)]
-        logger.info(s3_location_list)
-
-    return s3_location_list
 
 def get_tables(filter_database: Optional[str] = None, filter_tables: Optional[list[str]] = None) -> pd.DataFrame:
     if hms_engine.dialect.name == 'postgresql':
@@ -207,7 +169,7 @@ filter_tables: list[str] = None
 if FILTER_TABLES:
     filter_tables = [tbl.strip().lower() for tbl in FILTER_TABLES.split(",") if tbl.strip()]
 filtered_tables = get_tables(FILTER_DATABASE, filter_tables)
-s3_location_list = get_s3_location_list(FILTER_BATCH,FILTER_STAGE)
+s3_location_list = get_s3_location_list(s3, S3_ADMIN_BUCKET, S3_LOCATION_LIST_OBJECT_NAME, FILTER_BATCH,FILTER_STAGE)
 filtered_tables = filtered_tables[filtered_tables["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
 
 @pytest.mark.parametrize("table", filtered_tables.iterrows())

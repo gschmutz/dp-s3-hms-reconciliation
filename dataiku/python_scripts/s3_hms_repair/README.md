@@ -9,6 +9,8 @@ In the 3.x version an `MSCK REPAIR` is called on the Hive Metastore services whe
 Set environment variables
 
 ```bash
+export DATAIKU_ENV=pz
+
 export FILTER_DATABASE=
 export FILTER_TABLES=
 export FILTER_BATCH=

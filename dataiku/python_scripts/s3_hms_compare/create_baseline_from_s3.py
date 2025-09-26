@@ -27,13 +27,16 @@ from urllib.parse import urlparse
 from sqlalchemy import create_engine, select, text, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from util import get_param, get_credential, replace_vars_in_string
+from util import get_param, get_credential, get_zone_name, replace_vars_in_string
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+ZONE = get_zone_name(upper=True)
+
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
+ENV = get_param('ENV', 'UAT', upper=True)
 FILTER_DATABASE = get_param('FILTER_DATABASE', "")
 FILTER_TABLES = get_param('FILTER_TABLES', "")
 
@@ -73,7 +76,6 @@ else:
         hms_trino_url = f'{hms_trino_url}?protocol=https&verify=false'
     
     src_engine = create_engine(hms_trino_url)
-
 
 # Create S3 client configuration
 s3_config = {"service_name": "s3"}
@@ -228,6 +230,8 @@ def get_partition_info(s3a_url):
         "fingerprint": fingerprint,
         "timestamp": int(latest_ts.timestamp())
     }
+
+S3_BASELINE_OBJECT_NAME = replace_vars_in_string(S3_BASELINE_OBJECT_NAME, { "database": FILTER_DATABASE.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
 
 with open(S3_BASELINE_OBJECT_NAME, "w") as f:
     # Print CSV header

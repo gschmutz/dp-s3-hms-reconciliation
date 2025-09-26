@@ -30,15 +30,15 @@ from requests import Session, session
 from sqlalchemy import create_engine, select, text, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from util import get_param, get_credential, replace_vars_in_string
+from util import get_param, get_credential, get_zone_name, replace_vars_in_string
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+ZONE = get_zone_name(upper=True)
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 ENV = get_param('ENV', 'UAT', upper=True)
-ZONE = get_param('ZONE', 'pz', upper=True)
 
 FILTER_DATABASE = get_param('FILTER_DATABASE', "")
 FILTER_TABLES = get_param('FILTER_TABLES', "")
@@ -70,6 +70,7 @@ AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', 'admin')
 AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', 'admin123')
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
 S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
+S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "database": FILTER_DATABASE.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
 
 # Setup connections to the metadatastore, either directly to postgresql or via trino
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
@@ -117,6 +118,25 @@ class S3Location(Base):
 
 def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: str="", filter_database: str="", filter_tables: str="") -> list[S3Location]:
     """
+    Retrieves a list of S3Location objects from the database, applying batching and filtering strategies.
+
+    Args:
+        batching_strategy (str, optional): The strategy used to batch tables. Supported values are 
+            'balanced_by_partition_size', 'by_table_prefix', and 'create_time'.
+        number_of_batches (str, optional): The number of batches to divide the tables into. Defaults to 1 if not provided.
+        filter_database (str, optional): The name of the database to filter tables by.
+        filter_tables (str, optional): A comma-separated list of table names to filter by.
+
+    Returns:
+        list[S3Location]: A list of S3Location objects, each annotated with batch and stage information.
+
+    Raises:
+        ValueError: If an unknown batching strategy is provided.
+
+    Notes:
+        - The batching expression and filtering clause are dynamically constructed based on the input parameters.
+        - The function supports both PostgreSQL and Trino dialects for catalog naming.
+        - The query ranks and groups tables by partition count, table prefix, and creation time for batching.
     """
 
     nof_batches = number_of_batches if number_of_batches else 1
@@ -216,8 +236,6 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
         s3_locations = session.execute(stmt).scalars().all()
 
         return s3_locations
-
-S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "database": FILTER_DATABASE.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
 
 with open(S3_LOCATION_LIST_OBJECT_NAME, "w") as f:
     # Print CSV header

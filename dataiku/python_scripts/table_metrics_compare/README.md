@@ -21,6 +21,8 @@ pip install -r requirements.txt
 Set environment variables
 
 ```bash
+export DATAIKU_ENV=pz
+
 export FILTER_CATALOG=
 export FILTER_SCHEMA=
 export FILTER_TABLES=

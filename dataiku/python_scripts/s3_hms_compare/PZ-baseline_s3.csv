@@ -1,0 +1,13 @@
+fully_qualified_table_name,database_name,table_name,has_partitions,s3_location,partition_count,fingerprint,timestamp
+flight_db.flights_1_t,flight_db,flights_1_t,Y,s3a://flight-bucket/refined/flights_1_t,132,72f7db9f2e56eec6fd4dbf766306b9401b3c8e16bbe54a531f7d3beaba3552e6,1758910826
+flight_db.flights_5_t,flight_db,flights_5_t,Y,s3a://flight-bucket/refined/flights_5_t,132,72f7db9f2e56eec6fd4dbf766306b9401b3c8e16bbe54a531f7d3beaba3552e6,1758910827
+flight_db.flights_10_t,flight_db,flights_10_t,Y,s3a://flight-bucket/refined/flights_10_t,0,,1758910427
+flight_db.flights_6_t,flight_db,flights_6_t,Y,s3a://flight-bucket/refined/flights_6_t,132,72f7db9f2e56eec6fd4dbf766306b9401b3c8e16bbe54a531f7d3beaba3552e6,1758910827
+flight_db.flights_2_t,flight_db,flights_2_t,Y,s3a://flight-bucket/refined/flights_2_t,132,72f7db9f2e56eec6fd4dbf766306b9401b3c8e16bbe54a531f7d3beaba3552e6,1758910826
+flight_db.flights_4_t,flight_db,flights_4_t,Y,s3a://flight-bucket/refined/flights_4_t,132,72f7db9f2e56eec6fd4dbf766306b9401b3c8e16bbe54a531f7d3beaba3552e6,1758910827
+flight_db.flights_9_t,flight_db,flights_9_t,Y,s3a://flight-bucket/refined/flights_9_t,132,72f7db9f2e56eec6fd4dbf766306b9401b3c8e16bbe54a531f7d3beaba3552e6,1758910828
+flight_db.flights_0_t,flight_db,flights_0_t,Y,s3a://flight-bucket/refined/flights_0_t,132,72f7db9f2e56eec6fd4dbf766306b9401b3c8e16bbe54a531f7d3beaba3552e6,1758910826
+flight_db.flights_8_t,flight_db,flights_8_t,Y,s3a://flight-bucket/refined/flights_8_t,132,72f7db9f2e56eec6fd4dbf766306b9401b3c8e16bbe54a531f7d3beaba3552e6,1758910828
+flight_db.flights_7_t,flight_db,flights_7_t,Y,s3a://flight-bucket/refined/flights_7_t,132,72f7db9f2e56eec6fd4dbf766306b9401b3c8e16bbe54a531f7d3beaba3552e6,1758910827
+flight_db.flights_3_t,flight_db,flights_3_t,Y,s3a://flight-bucket/refined/flights_3_t,132,72f7db9f2e56eec6fd4dbf766306b9401b3c8e16bbe54a531f7d3beaba3552e6,1758910826
+flight_db.flights_t,flight_db,flights_t,N,s3a://flight-bucket/refined/flights_t,0,,1758910511

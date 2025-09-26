@@ -7,6 +7,8 @@ This sub-project creates a list of s3 locations for tables registered in Hive Me
 Set environment variables
 
 ```bash
+export DATAIKU_ENV=pz
+
 export FILTER_DATABASE=
 export FILTER_TABLES=
 
@@ -34,7 +36,7 @@ export AWS_ACCESS_KEY_ID=admin
 export AWS_SECRET_ACCESS_KEY=abc123abc123
 export S3_ENDPOINT_URL=http://localhost:9000
 export S3_ADMIN_BUCKET=admin-bucket
-export S3_LOCATION_LIST_OBJECT_NAME=s3_locations.csv
+export S3_LOCATION_LIST_OBJECT_NAME={zone}_s3_locations_{schema}.csv
 ```
 
 Run it

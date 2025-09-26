@@ -1,6 +1,9 @@
 import logging
 import os
 import re
+import boto3
+import pandas as pd
+import io
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -73,7 +76,7 @@ def get_credential(name, default=None) -> str:
          
     return return_value
 
-def get_zone_name() -> str:
+def get_zone_name(upper=False) -> str:
     """
     Retrieves the zone name from the Dataiku global variable.
     """
@@ -89,9 +92,58 @@ def get_zone_name() -> str:
 
     logger.info(f"Zone: {return_value}")
 
-    return return_value
+    if upper:
+        return return_value.upper()
+    else:
+        return return_value
 
 def replace_vars_in_string(s, variables):
     print(f"Replacing variables in string: {s} with {variables}")
     # Replace {var} with value from variables dict
     return re.sub(r"\{(\w+)\}", lambda m: str(variables.get(m.group(1), m.group(0))), s)        
+
+def get_s3_location_list(s3: boto3.client, s3_admin_bucket: str, s3_location_list_object_name: str, batch: str, stage: str) -> pd.DataFrame:
+    """
+    Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
+    Parameters:
+        s3 (boto3.client): An initialized boto3 S3 client.
+        s3_admin_bucket (str): The name of the S3 bucket where the CSV file is stored.
+        s3_location_list_object_name (str): The key (object name) of the CSV file in the S3 bucket.
+        batch (str): The name of the batch to filter the locations by. If provided, only locations matching this batch are returned.
+        stage (str): The name of the stage to filter the locations by. If provided, only locations matching this stage are returned.
+    Returns:
+        pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified batch.
+    Raises:
+        ValueError: If the CSV file retrieved from S3 is empty.
+    Notes:
+        - The function expects the CSV file to be accessible via the global S3_ADMIN_BUCKET and S3_LOCATION_LIST_OBJECT_NAME.
+        - The function assumes the existence of a global `s3` client and required imports (`io`, `pandas as pd`).
+    """
+
+    logger.info(f"Retrieving S3 location list from s3://{s3_admin_bucket}/{s3_location_list_object_name}")
+    # Read the object
+    response = s3.get_object(Bucket=s3_admin_bucket, Key=s3_location_list_object_name)
+
+    # `response['Body'].read()` returns bytes, decode to string
+    csv_string = response['Body'].read().decode('utf-8')
+
+    # Debug: print the content
+    logger.info(f"CSV content length: {len(csv_string)}")
+    logger.info(f"First 100 chars: {csv_string[:100]}")
+
+    # Add error handling
+    if not csv_string.strip():
+        raise ValueError("CSV file is empty")
+
+    # Wrap the string in a StringIO buffer
+    csv_buffer = io.StringIO(csv_string)
+
+    s3_location_list = pd.read_csv(csv_buffer)
+    if batch:
+        s3_location_list = s3_location_list[s3_location_list["batch"] == int(batch)]
+        logger.info(s3_location_list)
+    if stage:    
+        s3_location_list = s3_location_list[s3_location_list["stage"] == int(stage)]
+        logger.info(s3_location_list)
+
+    return s3_location_list
