@@ -12,6 +12,7 @@ export FILTER_TABLES=
 
 export BATCHING_STRATEGY=balanced_by_partition_size
 export NUMBER_OF_BATCHES=3
+export NUMBER_OF_STAGES=1
 
 export HMS_DB_ACCESS_STRATEGY=trino
 

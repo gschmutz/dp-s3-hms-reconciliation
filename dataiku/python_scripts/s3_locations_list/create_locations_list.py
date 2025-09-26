@@ -104,6 +104,7 @@ FILTER_TABLES = get_param('FILTER_TABLES', "")
 
 BATCHING_STRATEGY = get_param('BATCHING_STRATEGY', 'balanced_by_partition_size')      # balanced_by_partition_size | by_table_prefix | create_time
 NUMBER_OF_BATCHES = get_param('NUMBER_OF_BATCHES', "3")
+NUMBER_OF_STAGES = get_param('NUMBER_OF_STAGES', "1") 
 
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
 
@@ -168,9 +169,10 @@ class S3Location(Base):
     last_create_time = Column(Integer, nullable=False)
     row_num = Column(Integer, nullable=False)
     batch = Column(Integer, nullable=False)
+    stage = Column(Integer, nullable=False)
 
     def __repr__(self):
-        return f"<S3Location(fully_qualified_table_name={self.fully_qualified_table_name}, database_name={self.database_name}, table_name='{self.table_name}', table_type='{self.table_type}', location='{self.location}', has_partitions='{self.has_partitions}', partition_count={self.partition_count}, row_num={self.row_num}, batch={self.batch})>"
+        return f"<S3Location(fully_qualified_table_name={self.fully_qualified_table_name}, database_name={self.database_name}, table_name='{self.table_name}', table_type='{self.table_type}', location='{self.location}', has_partitions='{self.has_partitions}', partition_count={self.partition_count}, row_num={self.row_num}, batch={self.batch}, stage={self.stage})>"
 
 def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: str="", filter_database: str="", filter_tables: str="") -> list[S3Location]:
     """
@@ -180,13 +182,15 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
     if batching_strategy not in ['balanced_by_partition_size', 'by_table_prefix', 'create_time']:    
         raise ValueError(f"Unknown batch strategy: {batching_strategy}")
     elif batching_strategy == 'balanced_by_partition_size':
-        batching_expr = f"(ranked_by_partition_count % {number_of_batches}) + 1"
+        batching_expr = f"(ranked_by_partition_count % {number_of_batches})"
     elif batching_strategy == 'by_table_prefix' and number_of_batches: 
-        batching_expr = f"(group_nr_by_prefix % {number_of_batches}) + 1"
+        batching_expr = f"(group_nr_by_prefix % {number_of_batches})"
     elif batching_strategy == 'by_table_prefix' and not number_of_batches: 
         batching_expr = "group_nr_by_prefix"
     elif batching_strategy == 'create_time' and number_of_batches: 
         batching_expr = "batched_by_last_create_time"
+
+    nof_stages = NUMBER_OF_STAGES if NUMBER_OF_STAGES else 1
 
     if src_engine.dialect.name == 'postgresql':
         catalog_name = ""
@@ -211,7 +215,8 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
             text(f"""
                 SELECT
                     r.*,
-                    {batching_expr} as batch
+                    {batching_expr} + 1 AS batch,
+                    {batching_expr} % {nof_stages} + 1 AS stage
                 FROM
                     (
                     SELECT
@@ -266,7 +271,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
                 ORDER BY {batching_expr}, prefix
             """)
             )
-        
+        logger.debug("Executing query to retrieve S3 locations with batching: {stmt}")
         s3_locations = session.execute(stmt).scalars().all()
 
         return s3_locations
@@ -280,13 +285,13 @@ S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NA
 
 with open(S3_LOCATION_LIST_OBJECT_NAME, "w") as f:
     # Print CSV header
-    print("fully_qualified_table_name,database_name,table_name,table_type,s3_location,has_partitions,partition_count,last_create_time,batch", file=f)
+    print("fully_qualified_table_name,database_name,table_name,table_type,s3_location,has_partitions,partition_count,last_create_time,batch,stage", file=f)
                 
     # Iterate through Hive tables
     s3_locations = get_s3_locations_with_batches(BATCHING_STRATEGY, NUMBER_OF_BATCHES, FILTER_DATABASE, FILTER_TABLES)
     print(f"Found {len(s3_locations)} S3 locations in Hive Metastore")
     for s3_location in s3_locations:
-        print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{s3_location.table_type},{s3_location.location},{s3_location.has_partitions},{s3_location.partition_count},{s3_location.last_create_time},{s3_location.batch}", file=f)
+        print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{s3_location.table_type},{s3_location.location},{s3_location.has_partitions},{s3_location.partition_count},{s3_location.last_create_time},{s3_location.batch},{s3_location.stage}", file=f)
 
 # upload the file to S3 to make it available
 if S3_UPLOAD_ENABLED:
