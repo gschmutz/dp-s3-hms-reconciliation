@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -71,3 +72,8 @@ def get_credential(name, default=None) -> str:
     logger.info(f"{name}: *****")
          
     return return_value
+
+def replace_vars_in_string(s, variables):
+    print(f"Replacing variables in string: {s} with {variables}")
+    # Replace {var} with value from variables dict
+    return re.sub(r"\{(\w+)\}", lambda m: str(variables.get(m.group(1), m.group(0))), s)        

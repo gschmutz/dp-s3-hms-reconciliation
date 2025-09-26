@@ -20,7 +20,7 @@ import select
 import boto3
 import re
 import os
-import hashlib
+import sys
 import logging
 from datetime import datetime
 from collections import defaultdict
@@ -29,6 +29,8 @@ from urllib.parse import urlparse
 from requests import Session, session
 from sqlalchemy import create_engine, select, text, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from util import get_param, get_credential, replace_vars_in_string
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -281,11 +283,6 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
         s3_locations = session.execute(stmt).scalars().all()
 
         return s3_locations
-
-def replace_vars_in_string(s, variables):
-    print(f"Replacing variables in string: {s} with {variables}")
-    # Replace {var} with value from variables dict
-    return re.sub(r"\{(\w+)\}", lambda m: str(variables.get(m.group(1), m.group(0))), s)        
 
 S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "database": FILTER_DATABASE.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
 
