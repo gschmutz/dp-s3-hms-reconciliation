@@ -102,8 +102,8 @@ def get_credential(name, default=None) -> str:
     return return_value
 
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
-ENV = get_param('ENV', 'UAT', True)
-ZONE = get_param('ZONE', 'pz', True)
+ENV = get_param('ENV', 'UAT', upper=True)
+ZONE = get_param('ZONE', 'pz', upper=True)
 
 FILTER_DATABASE = get_param('FILTER_DATABASE', "")
 FILTER_TABLES = get_param('FILTER_TABLES', "")
@@ -287,7 +287,7 @@ def replace_vars_in_string(s, variables):
     # Replace {var} with value from variables dict
     return re.sub(r"\{(\w+)\}", lambda m: str(variables.get(m.group(1), m.group(0))), s)        
 
-S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "database": FILTER_DATABASE, "zone": ZONE, "env": ENV } ) 
+S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "database": FILTER_DATABASE.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
 
 with open(S3_LOCATION_LIST_OBJECT_NAME, "w") as f:
     # Print CSV header
