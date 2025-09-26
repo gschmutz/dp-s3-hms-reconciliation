@@ -7,6 +7,7 @@ def send_allure_results(
     allure_results_directory,
     allure_server,
     project_id,
+    create_project=False,
     security_user,
     security_password,
     ssl_verification=True,
@@ -43,6 +44,21 @@ def send_allure_results(
         raise Exception("CSRF access token not found in cookies.")
     print("CSRF-ACCESS-TOKEN: " + csrf_access_token)
 
+    if create_project:
+        print("------------------CREATE-PROJECT------------------")
+        create_project_body = {
+            "id": project_id
+        }
+        json_request_body = json.dumps(create_project_body)
+        headers['X-CSRF-TOKEN'] = csrf_access_token
+        response = session.post(
+            f"{allure_server}/allure-docker-service/projects",
+            headers=headers,
+            data=json_request_body,
+            verify=ssl_verification
+        )
+
+    print("------------------SEND-RESULTS------------------")
     files = os.listdir(results_directory)
     print('FILES:')
     results = []
@@ -50,6 +66,7 @@ def send_allure_results(
     block_size = 50
     for i in range(0, len(files), block_size):
         block_files = files[i:i + block_size]
+        results = []
         for file in block_files:
             result = {}
             file_path = os.path.join(results_directory, file)
@@ -71,10 +88,9 @@ def send_allure_results(
         request_body = {"results": results}
         json_request_body = json.dumps(request_body)
 
-        print("------------------SEND-RESULTS------------------")
         headers['X-CSRF-TOKEN'] = csrf_access_token
         response = session.post(
-            f"{allure_server}/allure-docker-service/send-results?project_id={project_id}&force_project_creation='true'",
+            f"{allure_server}/allure-docker-service/send-results?project_id={project_id}",
             headers=headers,
             data=json_request_body,
             verify=ssl_verification
