@@ -98,6 +98,7 @@ def get_credential(name, default=None) -> str:
 FILTER_DATABASE = get_param('FILTER_DATABASE', None)
 FILTER_TABLES = get_param('FILTER_TABLES', None)
 FILTER_BATCH = get_param('FILTER_BATCH', "")                    # either all or a specific batch number, if empty it will not use the batch filter at all
+FILTER_STAGE = get_param('FILTER_STAGE', "")                    # either all or a specific stage number, if empty it will not use the stage filter at all
 
 DRY_RUN = get_param('DRY_RUN', 'true').lower() in ('true', '1', 't')
 
@@ -174,13 +175,14 @@ if ENDPOINT_URL:
 
 s3 = boto3.client(**s3_config)
 
-def get_s3_location_list(batch: str) -> pd.DataFrame:
+def get_s3_location_list(batch: str, stage: str) -> pd.DataFrame:
     """
     Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
     Parameters:
-        batch (str): The name of the batch to filter the locations by. 
+        batch (str): The name of the batch to filter the locations by. If provided, only locations matching this batch are returned.
+        stage (str): The name of the stage to filter the locations by. If provided, only locations matching this stage are returned.
     Returns:
-        pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified bucket.
+        pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified batch.
     Raises:
         ValueError: If the CSV file retrieved from S3 is empty.
     Notes:
@@ -195,8 +197,8 @@ def get_s3_location_list(batch: str) -> pd.DataFrame:
     csv_string = response['Body'].read().decode('utf-8')
 
     # Debug: print the content
-    logger.debug(f"CSV content length: {len(csv_string)}")
-    logger.debug(f"First 100 chars: {csv_string[:100]}")
+    logger.info(f"CSV content length: {len(csv_string)}")
+    logger.info(f"First 100 chars: {csv_string[:100]}")
 
     # Add error handling
     if not csv_string.strip():
@@ -208,6 +210,10 @@ def get_s3_location_list(batch: str) -> pd.DataFrame:
     s3_location_list = pd.read_csv(csv_buffer)
     if batch:
         s3_location_list = s3_location_list[s3_location_list["batch"] == int(batch)]
+        logger.info(s3_location_list)
+    if stage:    
+        s3_location_list = s3_location_list[s3_location_list["stage"] == int(stage)]
+        logger.info(s3_location_list)
 
     return s3_location_list
 
@@ -257,13 +263,13 @@ def get_tables(filter_database: Optional[str] = None, filter_tables: Optional[li
         df = pd.DataFrame(result.fetchall(), columns=result.keys())
         return df
 
-def do_trino_repair(filter_database: Optional[str] = None, filter_tables: Optional[list[str]] = None, filter_batch: Optional[str] = None):
+def do_trino_repair(filter_database: Optional[str] = None, filter_tables: Optional[list[str]] = None, filter_batch: Optional[str] = None, filter_stage: Optional[str] = None):
     filtered_tables = get_tables(filter_database, filter_tables)
 
     logger.info(f"Number of tables: {len(filtered_tables)}")
     
-    if filter_batch:
-        s3_location_list = get_s3_location_list(filter_batch)
+    if filter_batch or filter_stage:
+        s3_location_list = get_s3_location_list(filter_batch, filter_stage)
         logger.info(f"Number of s3 location entries: {len(s3_location_list)}")
 
         filtered_tables = filtered_tables[filtered_tables["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
@@ -290,13 +296,13 @@ def do_trino_repair(filter_database: Optional[str] = None, filter_tables: Option
             else:
                 logger.info(f"DRY RUN - would execute repairing table {database}.{table_name} via Trino")
 
-def do_hms_3x_repair(filter_database: Optional[str] = None, filter_tables: Optional[list[str]] = None, filter_batch: Optional[str] = None):
+def do_hms_3x_repair(filter_database: Optional[str] = None, filter_tables: Optional[list[str]] = None, filter_batch: Optional[str] = None, filter_stage: Optional[str] = None):
     filtered_tables = get_tables(filter_database, filter_tables)
 
     logger.info(f"Number of tables: {len(filtered_tables)}")
 
-    if filter_batch:
-        s3_location_list = get_s3_location_list(filter_batch)
+    if filter_batch or filter_stage:
+        s3_location_list = get_s3_location_list(filter_batch, filter_stage)
         logger.info(f"Number of s3 location entries: {len(s3_location_list)}")
 
         filtered_tables = filtered_tables[filtered_tables["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
@@ -337,6 +343,6 @@ if FILTER_TABLES:
     filter_tables_list = [tbl.strip().lower() for tbl in FILTER_TABLES.split(",") if tbl.strip()]
 
 if HMS_VERSION == "3":
-    do_hms_3x_repair(FILTER_DATABASE, filter_tables_list, FILTER_BATCH)
+    do_hms_3x_repair(FILTER_DATABASE, filter_tables_list, FILTER_BATCH, FILTER_STAGE)
 else:
-    do_trino_repair(FILTER_DATABASE, filter_tables_list, FILTER_BATCH)
+    do_trino_repair(FILTER_DATABASE, filter_tables_list, FILTER_BATCH, FILTER_STAGE)

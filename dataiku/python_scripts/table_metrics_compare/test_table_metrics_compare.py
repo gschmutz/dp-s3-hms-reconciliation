@@ -120,7 +120,10 @@ def get_credential(name, default=None) -> str:
 FILTER_CATALOG = get_param('FILTER_CATALOG', "")
 FILTER_SCHEMA = get_param('FILTER_SCHEMA', "")
 FILTER_TABLES = get_param('FILTER_TABLES', "")
-FILTER_BATCH = get_param('FILTER_BATCH', "")
+FILTER_BATCH = get_param('FILTER_BATCH', "")                    # either all or a specific batch number, if empty it will not use the batch filter at all
+FILTER_STAGE = get_param('FILTER_STAGE', "")                    # either all or a specific stage number, if empty it will not use the stage filter at all
+
+RESTORE_TARGET_TIMESTAMP = get_param('RESTORE_TARGET_TIMESTAMP', None)  # if set will be used to restore the baseline counts from Kafka at a specific point in time (unix timestamp in milliseconds)
  
 TRINO_USER = get_credential('TRINO_USER', 'trino')
 TRINO_PASSWORD = get_credential('TRINO_PASSWORD', '')
@@ -207,11 +210,12 @@ consumer_conf_plaintext = {
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_s3_location_list(batch: str) -> pd.DataFrame:
+def get_s3_location_list(batch: str, stage: str) -> pd.DataFrame:
     """
     Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
     Parameters:
-        batch (str): The name of the S3 batch to filter the locations by. If provided, only locations matching this batch are returned.
+        batch (str): The name of the batch to filter the locations by. If provided, only locations matching this batch are returned.
+        stage (str): The name of the stage to filter the locations by. If provided, only locations matching this stage are returned.
     Returns:
         pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified batch.
     Raises:
@@ -228,8 +232,8 @@ def get_s3_location_list(batch: str) -> pd.DataFrame:
     csv_string = response['Body'].read().decode('utf-8')
 
     # Debug: print the content
-    print(f"CSV content length: {len(csv_string)}")
-    print(f"First 100 chars: {csv_string[:100]}")
+    logger.info(f"CSV content length: {len(csv_string)}")
+    logger.info(f"First 100 chars: {csv_string[:100]}")
 
     # Add error handling
     if not csv_string.strip():
@@ -241,7 +245,10 @@ def get_s3_location_list(batch: str) -> pd.DataFrame:
     s3_location_list = pd.read_csv(csv_buffer)
     if batch:
         s3_location_list = s3_location_list[s3_location_list["batch"] == int(batch)]
-        print(s3_location_list)
+        logger.info(s3_location_list)
+    if stage:    
+        s3_location_list = s3_location_list[s3_location_list["stage"] == int(stage)]
+        logger.info(s3_location_list)
 
     return s3_location_list
 
@@ -294,30 +301,35 @@ def get_actual_count(table: str, timestamp_column: Optional[str] = None, baselin
             count = None
     return count
  
-def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_schema: Optional[str] = None, filter_tables: Optional[str] = None, filter_batch: Optional[str] = None):
+def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_schema: Optional[str] = None, filter_tables: Optional[str] = None, filter_batch: Optional[str] = None, filter_stage: Optional[str] = None) -> dict:
     """
-    Initializes and returns the latest actual values for tables by consuming messages from a Kafka topic.
-    This function reads String-serialized messages from a Kafka topic, optionally filtering by catalog, schema, and table name.
-    For each table, only the message with the latest timestamp is retained. The result is a dictionary mapping fully qualified
-    table names to their latest metric values and associated metadata.
-    Args:
-        filter_catalog (str, optional): If provided, only messages with this catalog are processed.
-        filter_schema (str, optional): If provided, only messages with this schema are processed.
-        filter_tables (str, optional): If provided, only messages with this table names are processed.
-    Returns:
-        dict: A dictionary where keys are fully qualified table names (catalog.schema.table_name) and values are dictionaries
-              containing the latest timestamp, timestamp_column, value, metric_type, and table_name.
-    Raises:
-        KeyboardInterrupt: If the consumer is interrupted by the user.
-    Side Effects:
-        Prints status and debug information to stdout.
-        Closes the Kafka consumer upon completion.
+        Initializes and returns the latest actual table metric values by consuming messages from a Kafka topic.
+        This function connects to a Kafka topic, reads messages containing table metric information,
+        and filters the results based on the provided catalog, schema, table names, batch, and stage filters.
+        Only metrics from successful 'post_create_table_metric' jobs are considered, and only the latest metric
+        per table (based on event timestamp) is retained. Tables are further filtered to ensure they exist in
+        the provided S3 location list.
+        Args:
+            filter_catalog (Optional[str]): Catalog name to filter metrics. If None, no catalog filtering is applied.
+            filter_schema (Optional[str]): Schema name to filter metrics. If None, no schema filtering is applied.
+            filter_tables (Optional[str]): Table name(s) to filter metrics. If None, no table filtering is applied.
+            filter_batch (Optional[str]): Batch identifier to filter S3 locations. If None, no batch filtering is applied.
+            filter_stage (Optional[str]): Stage identifier to filter metrics. If None, no stage filtering is applied.
+        Returns:
+            dict: A dictionary where keys are fully qualified table names (schema.table_name) and values are dictionaries
+                  containing the latest metric values for each table, including timestamp, timestamp_column, count, and table_name.
+        Raises:
+            Exception: If an error occurs during Kafka consumption or message processing.
+        Notes:
+            - Only metrics from tables present in the S3 location list are included.
+            - Only the latest metric per table (based on event_time) is retained.
+            - The function logs progress and errors using the configured logger.    
     """
     latest_values: dict[str, dict] = {}
     logger.info(f"running init_actual_values_from_kafka (filter_catalog={filter_catalog}, filter_schema={filter_schema}, filter_tables={filter_tables})")
  
     # the list of S3 locations with the tables (potentially filtered by batch)
-    s3_location_list = get_s3_location_list(filter_batch)
+    s3_location_list = get_s3_location_list(filter_batch, filter_stage)
 
     # read from kafka
     if KAFKA_SECURITY_PROTOCOL == 'SSL':
@@ -427,7 +439,7 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
     return latest_values
 
 # all the latest values from Kafka (applying a potential filer set via environment variables)
-latest_values = init_actual_values_from_kafka(FILTER_CATALOG, FILTER_SCHEMA, FILTER_TABLES, FILTER_BATCH)
+latest_values = init_actual_values_from_kafka(FILTER_CATALOG, FILTER_SCHEMA, FILTER_TABLES, FILTER_BATCH, FILTER_STAGE)
  
 # collection of fully qualified table names
 fully_qualified_table_names = list(latest_values.keys())

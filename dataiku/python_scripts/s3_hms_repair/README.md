@@ -12,8 +12,9 @@ Set environment variables
 export FILTER_DATABASE=
 export FILTER_TABLES=
 export FILTER_BATCH=
+export FILTER_STAGE=
 
-export DRY_RUN=false
+export DRY_RUN=true
 
 export HMS_VERSION=4
 export HMS_DB_ACCESS_STRATEGY=trino

@@ -25,6 +25,7 @@ export FILTER_CATALOG=
 export FILTER_SCHEMA=
 export FILTER_TABLES=
 export FILTER_BATCH=
+export FILTER_STAGE=
 
 export TRINO_USER=trino
 export TRINO_PASSWORD=

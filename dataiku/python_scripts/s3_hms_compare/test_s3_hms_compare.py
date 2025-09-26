@@ -179,6 +179,7 @@ def get_s3_location_list(batch: str, stage: str) -> pd.DataFrame:
     Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
     Parameters:
         batch (str): The name of the batch to filter the locations by. If provided, only locations matching this batch are returned.
+        stage (str): The name of the stage to filter the locations by. If provided, only locations matching this stage are returned.
     Returns:
         pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified batch.
     Raises:
@@ -195,8 +196,8 @@ def get_s3_location_list(batch: str, stage: str) -> pd.DataFrame:
     csv_string = response['Body'].read().decode('utf-8')
 
     # Debug: print the content
-    print(f"CSV content length: {len(csv_string)}")
-    print(f"First 100 chars: {csv_string[:100]}")
+    logger.info(f"CSV content length: {len(csv_string)}")
+    logger.info(f"First 100 chars: {csv_string[:100]}")
 
     # Add error handling
     if not csv_string.strip():
@@ -208,10 +209,10 @@ def get_s3_location_list(batch: str, stage: str) -> pd.DataFrame:
     s3_location_list = pd.read_csv(csv_buffer)
     if batch:
         s3_location_list = s3_location_list[s3_location_list["batch"] == int(batch)]
-        print(s3_location_list)
+        logger.info(s3_location_list)
     if stage:    
         s3_location_list = s3_location_list[s3_location_list["stage"] == int(stage)]
-        print(s3_location_list)
+        logger.info(s3_location_list)
 
     return s3_location_list
 
