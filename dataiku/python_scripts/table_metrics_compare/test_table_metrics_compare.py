@@ -35,6 +35,7 @@ TODO: run in batches
 import pytest
 import os
 import io
+import sys
 import time
 import json
 import logging
@@ -45,76 +46,14 @@ from sqlalchemy import create_engine,text
 from confluent_kafka import Consumer, KafkaError, TopicPartition, OFFSET_BEGINNING
 from confluent_kafka.deserializing_consumer import DeserializingConsumer
 from confluent_kafka.serialization import SerializationContext, MessageField, StringDeserializer, Deserializer
- 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from util import get_param, get_credential, replace_vars_in_string
+
 from typing import Optional
  
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# will only be used when running inside a scenario in Dataiku
-try:
-    from dataiku.scenario import Scenario
-    # This will only succeed if running inside DSS
-    scenario = Scenario()
-except ImportError:
-    logger.info("Unable to setup dataiku scenario API due to import error")    
-    scenario = None
- 
-# will only be used when running inside a scenario in Dataiku
-try:
-    import dataiku
-    # This will only succeed if running inside DSS
-    client = dataiku.api_client()
-except ImportError:
-    logger.info("Unable to setup dataiku client API due to import error")
-    client = None
- 
-def get_param(name, default=None) -> str:
-    """
-    Retrieves the value of a parameter by name from the scenario variables if available,
-    otherwise from the environment variables.
- 
-    Args:
-        name (str): The name of the parameter to retrieve.
-        default (Any, optional): The default value to return if the parameter is not found. Defaults to None.
- 
-    Returns:
-        Any: The value of the parameter if found, otherwise the default value.
-    """
-    return_value = default
-    if scenario is not None:
-        return_value = scenario.get_all_variables().get(name, default)
-    else:
-        return_value = os.getenv(name, default)
-
-    logger.info(f"{name}: {return_value}")
-
-    return return_value
- 
-def get_credential(name, default=None) -> str:
-    """
-    Retrieves the value of a secret credential by its name.
-    Args:
-        name (str): The key name of the credential to retrieve.
-        default (str, optional): The default value to return if the credential is not found. Defaults to None.
-    Returns:
-        str: The value of the credential if found, otherwise the default value.
-    """
-    return_value = default
-    if client is not None:
-        secrets = client.get_auth_info(with_secrets=True)["secrets"]
-        for secret in secrets:
-            if secret["key"] == name:
-                if "value" in secret:
-                    return_value = secret["value"]
-                else:
-                    break
-    else:
-        return_value = os.getenv(name, default)
-    logger.info(f"{name}: *****")
-         
-    return return_value
  
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 FILTER_CATALOG = get_param('FILTER_CATALOG', "")
