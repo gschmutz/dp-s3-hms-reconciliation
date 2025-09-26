@@ -73,6 +73,24 @@ def get_credential(name, default=None) -> str:
          
     return return_value
 
+def get_zone_name() -> str:
+    """
+    Retrieves the zone name from the Dataiku global variable.
+    """
+    return_value = "unknown"
+    if scenario is not None:
+        env_var = scenario.get_all_variables().get("env")
+        if env_var == "des":
+            return_value = "sz"
+        elif env_var == "des_pz":
+            return_value = "pz"
+    else:
+        return_value = os.getenv("DATAIKU_ENV", "unknown")
+
+    logger.info(f"Zone: {return_value}")
+
+    return return_value
+
 def replace_vars_in_string(s, variables):
     print(f"Replacing variables in string: {s} with {variables}")
     # Replace {var} with value from variables dict
