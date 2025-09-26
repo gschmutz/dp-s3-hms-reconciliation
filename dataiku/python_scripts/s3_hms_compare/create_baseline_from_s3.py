@@ -274,7 +274,7 @@ def get_partition_info(s3a_url):
             if partition_parts:
                 partitions.add("/".join(partition_parts))
             if obj["LastModified"] > latest_ts:
-                logger.info(f"Found new latest partition: {key} (last modified: {obj['LastModified']})")
+                logger.debug(f"Found new latest partition: {key} (last modified: {obj['LastModified']})")
                 latest_ts = obj["LastModified"]                
 
     fingerprint = ""

@@ -115,6 +115,7 @@ def get_credential(name, default=None) -> str:
 #FILTER_DATABASE = get_param('FILTER_DATABASE', "")
 #FILTER_TABLES = get_param('FILTER_TABLES', "")
 FILTER_BATCH = get_param('FILTER_BATCH', "")
+FILTER_STAGE = get_param('FILTER_STAGE', "")
 
 # either postgresql or trino
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
@@ -173,7 +174,7 @@ if ENDPOINT_URL:
 
 s3 = boto3.client(**s3_config)
 
-def get_s3_location_list(batch: str) -> pd.DataFrame:
+def get_s3_location_list(batch: str, stage: str) -> pd.DataFrame:
     """
     Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
     Parameters:
@@ -208,6 +209,9 @@ def get_s3_location_list(batch: str) -> pd.DataFrame:
     if batch:
         s3_location_list = s3_location_list[s3_location_list["batch"] == int(batch)]
         print(s3_location_list)
+    if stage:    
+        s3_location_list = s3_location_list[s3_location_list["stage"] == int(stage)]
+        print(s3_location_list)
 
     return s3_location_list
 
@@ -241,7 +245,7 @@ def get_s3_partitions_baseline():
 
     db_baseline = pd.read_csv(csv_buffer)
     
-    s3_location_list = get_s3_location_list(FILTER_BATCH)
+    s3_location_list = get_s3_location_list(FILTER_BATCH, FILTER_STAGE)
     db_baseline = db_baseline[db_baseline["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
 
     return db_baseline
@@ -316,7 +320,7 @@ def get_hms_partitions_count_and_partnames(s3_location: str, end_timestamp: int)
             ) p
             ON t."TBL_ID" = p."TBL_ID"
         """))
-        print (sql)
+        logger.debug("Executing SQL: {sql}")
         result = conn.execute(sql)
         row = result.mappings().one_or_none()  # strict: must return exactly one row
         return row

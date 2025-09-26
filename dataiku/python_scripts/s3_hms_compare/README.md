@@ -43,9 +43,10 @@ python create_baseline_from_s3.py
 ## Run the comparision
 
 ```bash
-export FILTER_DATABASE=
-export FILTER_TABLES=
+#export FILTER_DATABASE=
+#export FILTER_TABLES=
 export FILTER_BATCH=
+export FILTER_STAGE=
 
 export HMS_DB_ACCESS_STRATEGY=trino
 export USE_BASELINE_TIMESTAMP=false
