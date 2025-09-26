@@ -52,7 +52,7 @@ except ImportError:
     logger.info("Unable to setup dataiku client API due to import error")
     client = None
  
-def get_param(name, default=None) -> str:
+def get_param(name, default=None, upper=False) -> str:
     """
     Retrieves the value of a parameter by name from the scenario variables if available,
     otherwise from the environment variables.
@@ -72,8 +72,11 @@ def get_param(name, default=None) -> str:
 
     logger.info(f"{name}: {return_value}")
 
-    return return_value
- 
+    if upper:
+        return return_value.upper()
+    else:
+        return return_value
+
 def get_credential(name, default=None) -> str:
     """
     Retrieves the value of a secret credential by its name.
@@ -99,6 +102,9 @@ def get_credential(name, default=None) -> str:
     return return_value
 
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
+ENV = get_param('ENV', 'UAT', True)
+ZONE = get_param('ZONE', 'pz', True)
+
 FILTER_DATABASE = get_param('FILTER_DATABASE', "")
 FILTER_TABLES = get_param('FILTER_TABLES', "")
 
@@ -281,7 +287,7 @@ def replace_vars_in_string(s, variables):
     # Replace {var} with value from variables dict
     return re.sub(r"\{(\w+)\}", lambda m: str(variables.get(m.group(1), m.group(0))), s)        
 
-S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "database": FILTER_DATABASE } ) 
+S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "database": FILTER_DATABASE, "zone": ZONE, "env": ENV } ) 
 
 with open(S3_LOCATION_LIST_OBJECT_NAME, "w") as f:
     # Print CSV header
