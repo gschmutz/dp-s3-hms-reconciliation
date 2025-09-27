@@ -11,7 +11,7 @@ Set environment variables
 ```bash
 export DATAIKU_ENV=pz
 
-export FILTER_DATABASE=
+export FILTER_DATABASE=flight_db
 export FILTER_TABLES=
 export FILTER_BATCH=
 export FILTER_STAGE=

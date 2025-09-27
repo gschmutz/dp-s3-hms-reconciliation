@@ -115,6 +115,7 @@ if AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY:
     s3_config["aws_secret_access_key"] = AWS_SECRET_ACCESS_KEY
 if ENDPOINT_URL:
     s3_config["endpoint_url"] = ENDPOINT_URL
+    s3_config["verify"] = False  # Disable SSL verification for self-signed certificates
 
 s3 = boto3.client(**s3_config)
 
