@@ -22,6 +22,7 @@ import re
 import os
 import sys
 import logging
+import pandas as pd
 from datetime import datetime
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -172,8 +173,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
         Session = sessionmaker(bind=src_engine)
         session = Session()
 
-        stmt = select(S3Location).from_statement(
-            text(f"""
+        stmt = text(f"""
                 SELECT
                     r.*,
                     {batching_expr} + 1 AS batch,
@@ -231,9 +231,9 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
                 ) r
                 ORDER BY {batching_expr}, prefix
             """)
-            )
+            
         logger.debug("Executing query to retrieve S3 locations with batching: {stmt}")
-        s3_locations = session.execute(stmt).scalars().all()
+        s3_locations = session.execute(select(S3Location).from_statement(stmt)).scalars().all()
 
         return s3_locations
 
@@ -252,3 +252,16 @@ if S3_UPLOAD_ENABLED:
     logger.info(f"Uploading {S3_LOCATION_LIST_OBJECT_NAME} to s3://{S3_ADMIN_BUCKET}/{S3_LOCATION_LIST_OBJECT_NAME}")
     
     s3.upload_file(S3_LOCATION_LIST_OBJECT_NAME, S3_ADMIN_BUCKET, S3_LOCATION_LIST_OBJECT_NAME)
+
+# create summary
+df = pd.read_csv(S3_LOCATION_LIST_OBJECT_NAME)
+summary = (
+    df.groupby("stage")
+      .agg(
+          batches=("batch", lambda x: list(dict.fromkeys(x))),  # list of unique values, order preserved
+          tables_count=("batch", "size"),       # total number of rows
+      )
+      .reset_index()
+)
+logger.info(f"Summary of S3 locations by stage")
+logger.info("\n%s", summary)
