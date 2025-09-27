@@ -24,7 +24,7 @@ Set environment variables
 export DATAIKU_ENV=pz
 
 export FILTER_CATALOGS=
-export FILTER_SCHEMAS=
+export FILTER_SCHEMA=flight_db
 export FILTER_TABLES=
 export FILTER_BATCH=
 export FILTER_STAGE=
@@ -41,7 +41,7 @@ export AWS_ACCESS_KEY_ID=admin
 export AWS_SECRET_ACCESS_KEY=abc123abc123
 export S3_ENDPOINT_URL=http://localhost:9000
 export S3_ADMIN_BUCKET=admin-bucket
-export S3_BASELINE_OBJECT_NAME=baseline_s3.csv
+export S3_LOCATION_LIST_OBJECT_NAME={zone}_s3_locations_{database}.csv
 ```
 
 Run `pytest`

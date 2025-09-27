@@ -47,7 +47,7 @@ from confluent_kafka import Consumer, KafkaError, TopicPartition, OFFSET_BEGINNI
 from confluent_kafka.deserializing_consumer import DeserializingConsumer
 from confluent_kafka.serialization import SerializationContext, MessageField, StringDeserializer, Deserializer
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from util import get_param, get_credential, replace_vars_in_string
+from util import get_param, get_credential, get_zone_name, get_s3_location_list, replace_vars_in_string
 
 from typing import Optional
  
@@ -55,9 +55,12 @@ from typing import Optional
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
  
+ZONE = get_zone_name(upper=True)
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
+ENV = get_param('ENV', 'UAT', upper=True)
+
 FILTER_CATALOGS = get_param('FILTER_CATALOGS', "")
-FILTER_SCHEMAS = get_param('FILTER_SCHEMAS', "")
+FILTER_SCHEMA = get_param('FILTER_SCHEMA', "")
 FILTER_TABLES = get_param('FILTER_TABLES', "")
 FILTER_BATCH = get_param('FILTER_BATCH', "")                    # either all or a specific batch number, if empty it will not use the batch filter at all
 FILTER_STAGE = get_param('FILTER_STAGE', "")                    # either all or a specific stage number, if empty it will not use the stage filter at all
@@ -85,6 +88,7 @@ KAFKA_TOPIC_NAME = get_param('KAFKA_TOPIC_NAME', 'dpraw_execution_status_log_v1'
 ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
 S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
+S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "database": FILTER_SCHEMA.upper(), "schema": FILTER_SCHEMA.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
 
 # Construct connection URLs
 trino_url = f'trino://{TRINO_USER}:{TRINO_PASSWORD}@{TRINO_HOST}:{TRINO_PORT}/{TRINO_CATALOG}'
@@ -149,48 +153,6 @@ consumer_conf_plaintext = {
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_s3_location_list(s3: boto3.client, batch: str, stage: str) -> pd.DataFrame:
-    """
-    Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
-    Parameters:
-        batch (str): The name of the batch to filter the locations by. If provided, only locations matching this batch are returned.
-        stage (str): The name of the stage to filter the locations by. If provided, only locations matching this stage are returned.
-    Returns:
-        pd.DataFrame: A DataFrame containing the S3 location list, optionally filtered by the specified batch.
-    Raises:
-        ValueError: If the CSV file retrieved from S3 is empty.
-    Notes:
-        - The function expects the CSV file to be accessible via the global S3_ADMIN_BUCKET and S3_LOCATION_LIST_OBJECT_NAME.
-        - The function assumes the existence of a global `s3` client and required imports (`io`, `pandas as pd`).
-    """
-
-    # Read the object
-    response = s3.get_object(Bucket=S3_ADMIN_BUCKET, Key=S3_LOCATION_LIST_OBJECT_NAME)
-
-    # `response['Body'].read()` returns bytes, decode to string
-    csv_string = response['Body'].read().decode('utf-8')
-
-    # Debug: print the content
-    logger.info(f"CSV content length: {len(csv_string)}")
-    logger.info(f"First 100 chars: {csv_string[:100]}")
-
-    # Add error handling
-    if not csv_string.strip():
-        raise ValueError("CSV file is empty")
-
-    # Wrap the string in a StringIO buffer
-    csv_buffer = io.StringIO(csv_string)
-
-    s3_location_list = pd.read_csv(csv_buffer)
-    if batch:
-        s3_location_list = s3_location_list[s3_location_list["batch"] == int(batch)]
-        logger.info(s3_location_list)
-    if stage:    
-        s3_location_list = s3_location_list[s3_location_list["stage"] == int(stage)]
-        logger.info(s3_location_list)
-
-    return s3_location_list
-
 def get_baseline(table):
     return latest_values[table]
  
@@ -240,7 +202,7 @@ def get_actual_count(table: str, timestamp_column: Optional[str] = None, baselin
             count = None
     return count
 
-def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_schemas: Optional[str] = None, filter_tables: Optional[str] = None, filter_batch: Optional[str] = None, filter_stage: Optional[str] = None) -> dict:
+def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_schema: Optional[str] = None, filter_tables: Optional[str] = None, filter_batch: Optional[str] = None, filter_stage: Optional[str] = None) -> dict:
     """
         Initializes and returns the latest actual table metric values by consuming messages from a Kafka topic.
         This function connects to a Kafka topic, reads messages containing table metric information,
@@ -250,7 +212,7 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
         the provided S3 location list.
         Args:
             filter_catalogs (Optional[str]): Catalog name(s) to filter metrics. If None, no catalog filtering is applied.
-            filter_schemas (Optional[str]): Schema name(s) to filter metrics. If None, no schema filtering is applied.
+            filter_schema (Optional[str]): Schema name to filter metrics. If None, no schema filtering is applied.
             filter_tables (Optional[str]): Table name(s) to filter metrics. If None, no table filtering is applied.
             filter_batch (Optional[str]): Batch identifier to filter S3 locations. If None, no batch filtering is applied.
             filter_stage (Optional[str]): Stage identifier to filter metrics. If None, no stage filtering is applied.
@@ -265,10 +227,10 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
             - The function logs progress and errors using the configured logger.    
     """
     latest_values: dict[str, dict] = {}
-    logger.info(f"running init_actual_values_from_kafka (filter_catalogs={filter_catalogs}, filter_schemas={filter_schemas}, filter_tables={filter_tables})")
+    logger.info(f"running init_actual_values_from_kafka (filter_catalogs={filter_catalogs}, filter_schema={filter_schema}, filter_tables={filter_tables})")
  
     # the list of S3 locations with the tables (potentially filtered by batch)
-    s3_location_list = get_s3_location_list(s3, filter_batch, filter_stage)
+    s3_location_list = get_s3_location_list(s3, S3_ADMIN_BUCKET, S3_LOCATION_LIST_OBJECT_NAME, filter_batch, filter_stage)
 
     consume_until_timestamp_ms: int = int(time.time()) * 1000
     if RESTORE_TARGET_TIMESTAMP:
@@ -346,11 +308,8 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
                             if metric.get('catalog') not in filter_catalogs_list:
                                 logger.debug(f"Skipping {object} as catalog {metric.get('catalog')} is not in the filter_catalogs list")
                                 continue
-                        # Convert comma-separated filter_schemas string to list if necessary
-                        if filter_schemas:
-                            filter_schemas_list = [s.strip() for s in filter_schemas.split(",") if s.strip()]
-                            if metric.get('schema') not in filter_schemas_list:
-                                logger.debug(f"Skipping {object} as schema {metric.get('schema')} is not in the filter_schemas list")
+                        if filter_schema and metric.get('schema') != filter_schema:
+                                logger.debug(f"Skipping {object} as schema {metric.get('schema')} is not in the filter_schema list")
                                 continue
                         # Convert comma-separated filter_tables string to list if necessary
                         if filter_tables:
@@ -396,7 +355,7 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
     return latest_values
 
 # all the latest values from Kafka (applying a potential filer set via environment variables)
-latest_values = init_actual_values_from_kafka(FILTER_CATALOGS, FILTER_SCHEMAS, FILTER_TABLES, FILTER_BATCH, FILTER_STAGE)
+latest_values = init_actual_values_from_kafka(FILTER_CATALOGS, FILTER_SCHEMA, FILTER_TABLES, FILTER_BATCH, FILTER_STAGE)
  
 # collection of fully qualified table names
 fully_qualified_table_names = list(latest_values.keys())
