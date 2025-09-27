@@ -306,27 +306,27 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
                         if filter_catalogs:
                             filter_catalogs_list = [c.strip() for c in filter_catalogs.split(",") if c.strip()]
                             if metric.get('catalog') not in filter_catalogs_list:
-                                logger.debug(f"Skipping {object} as catalog {metric.get('catalog')} is not in the filter_catalogs list")
+                                logger.info(f"Skipping {object} as catalog {metric.get('catalog')} is not in the filter_catalogs list")
                                 continue
                         if filter_schema and metric.get('schema') != filter_schema:
-                                logger.debug(f"Skipping {object} as schema {metric.get('schema')} is not in the filter_schema list")
+                                logger.info(f"Skipping {object} as schema {metric.get('schema')} is not in the filter_schema list")
                                 continue
                         # Convert comma-separated filter_tables string to list if necessary
                         if filter_tables:
                             filter_tables_list = [t.strip() for t in filter_tables.split(",") if t.strip()]
                             if metric.get('table_name') not in filter_tables_list:
-                                logger.debug(f"Skipping {object} as table {metric.get('table_name')} is not in the filter_tables list")
+                                logger.info(f"Skipping {object} as table {metric.get('table_name')} is not in the filter_tables list")
                                 continue
 
                         # check if the table is in the list of S3 locations and if not skip it
                         fully_qualified_table_name = f"{metric.get('schema')}.{metric.get('table_name')}"
                         if fully_qualified_table_name not in s3_location_list["fully_qualified_table_name"].values:
-                            logger.debug(f"Skipping {object} as it is not in the S3 location list")
+                            logger.info(f"Skipping {object} as it is not in the S3 location list")
                             continue
 
                         timestamp = metric.get('event_time', 0)  # Assuming event_time is in milliseconds
                         if timestamp > consume_until_timestamp_ms:
-                            logger.debug(f"Skipping {object} as event_time {timestamp} is after the consume_until_timestamp_ms {consume_until_timestamp_ms}")
+                            logger.info(f"Skipping {object} as event_time {timestamp} is after the consume_until_timestamp_ms {consume_until_timestamp_ms}")
                             continue
     
                         # Store only the latest value based on timestamp
