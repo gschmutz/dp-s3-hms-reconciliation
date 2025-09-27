@@ -240,7 +240,7 @@ s3_locations = db_baseline["s3_location"].tolist()
 partition_counts = db_baseline.set_index("s3_location")["partition_count"].to_dict()
 partition_fingerprint = db_baseline.set_index("s3_location")["fingerprint"].to_dict()
 
-# retrive the current timestamp as unix timestamp
+# retrieve the current timestamp as unix timestamp
 now_timestamp = datetime.now(timezone.utc).timestamp()
 
 logger.info(f"Testing {len(s3_locations)} S3 locations")

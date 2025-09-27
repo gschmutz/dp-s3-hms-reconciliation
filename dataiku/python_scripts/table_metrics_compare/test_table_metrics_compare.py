@@ -56,8 +56,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
  
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
-FILTER_CATALOG = get_param('FILTER_CATALOG', "")
-FILTER_SCHEMA = get_param('FILTER_SCHEMA', "")
+FILTER_CATALOGS = get_param('FILTER_CATALOGS', "")
+FILTER_SCHEMAS = get_param('FILTER_SCHEMAS', "")
 FILTER_TABLES = get_param('FILTER_TABLES', "")
 FILTER_BATCH = get_param('FILTER_BATCH', "")                    # either all or a specific batch number, if empty it will not use the batch filter at all
 FILTER_STAGE = get_param('FILTER_STAGE', "")                    # either all or a specific stage number, if empty it will not use the stage filter at all
@@ -239,8 +239,8 @@ def get_actual_count(table: str, timestamp_column: Optional[str] = None, baselin
             logger.error(f"Error executing query for table '{table}': {str(e)}")
             count = None
     return count
- 
-def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_schema: Optional[str] = None, filter_tables: Optional[str] = None, filter_batch: Optional[str] = None, filter_stage: Optional[str] = None) -> dict:
+
+def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_schemas: Optional[str] = None, filter_tables: Optional[str] = None, filter_batch: Optional[str] = None, filter_stage: Optional[str] = None) -> dict:
     """
         Initializes and returns the latest actual table metric values by consuming messages from a Kafka topic.
         This function connects to a Kafka topic, reads messages containing table metric information,
@@ -249,8 +249,8 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
         per table (based on event timestamp) is retained. Tables are further filtered to ensure they exist in
         the provided S3 location list.
         Args:
-            filter_catalog (Optional[str]): Catalog name to filter metrics. If None, no catalog filtering is applied.
-            filter_schema (Optional[str]): Schema name to filter metrics. If None, no schema filtering is applied.
+            filter_catalogs (Optional[str]): Catalog name(s) to filter metrics. If None, no catalog filtering is applied.
+            filter_schemas (Optional[str]): Schema name(s) to filter metrics. If None, no schema filtering is applied.
             filter_tables (Optional[str]): Table name(s) to filter metrics. If None, no table filtering is applied.
             filter_batch (Optional[str]): Batch identifier to filter S3 locations. If None, no batch filtering is applied.
             filter_stage (Optional[str]): Stage identifier to filter metrics. If None, no stage filtering is applied.
@@ -265,10 +265,14 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
             - The function logs progress and errors using the configured logger.    
     """
     latest_values: dict[str, dict] = {}
-    logger.info(f"running init_actual_values_from_kafka (filter_catalog={filter_catalog}, filter_schema={filter_schema}, filter_tables={filter_tables})")
+    logger.info(f"running init_actual_values_from_kafka (filter_catalogs={filter_catalogs}, filter_schemas={filter_schemas}, filter_tables={filter_tables})")
  
     # the list of S3 locations with the tables (potentially filtered by batch)
     s3_location_list = get_s3_location_list(s3, filter_batch, filter_stage)
+
+    consume_until_timestamp_ms: int = int(time.time()) * 1000
+    if RESTORE_TARGET_TIMESTAMP:
+        consume_until_timestamp_ms = int(RESTORE_TARGET_TIMESTAMP)  
 
     # read from kafka
     if KAFKA_SECURITY_PROTOCOL == 'SSL':
@@ -333,27 +337,41 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
                     if "job_outcome" in post_create_table_metric_step and post_create_table_metric_step["job_outcome"] == "SUCCESS":                   
                         metric: dict = json.loads(post_create_table_metric_step["job_exit_message"])
  
+                        object = f"{metric.get('catalog')}.{metric.get('schema')}.{metric.get('table_name')}"
+
                         # apply filters it set
-                        if filter_catalog and metric.get('catalog') != filter_catalog:
-                            continue
-                        if filter_schema and metric.get('schema') != filter_schema:
-                            continue
-                        if filter_tables and metric.get('table_name') not in filter_tables:
-                            continue
+                        # Convert comma-separated filter_catalogs string to list if necessary
+                        if filter_catalogs:
+                            filter_catalogs_list = [c.strip() for c in filter_catalogs.split(",") if c.strip()]
+                            if metric.get('catalog') not in filter_catalogs_list:
+                                logger.debug(f"Skipping {object} as catalog {metric.get('catalog')} is not in the filter_catalogs list")
+                                continue
+                        # Convert comma-separated filter_schemas string to list if necessary
+                        if filter_schemas:
+                            filter_schemas_list = [s.strip() for s in filter_schemas.split(",") if s.strip()]
+                            if metric.get('schema') not in filter_schemas_list:
+                                logger.debug(f"Skipping {object} as schema {metric.get('schema')} is not in the filter_schemas list")
+                                continue
+                        # Convert comma-separated filter_tables string to list if necessary
+                        if filter_tables:
+                            filter_tables_list = [t.strip() for t in filter_tables.split(",") if t.strip()]
+                            if metric.get('table_name') not in filter_tables_list:
+                                logger.debug(f"Skipping {object} as table {metric.get('table_name')} is not in the filter_tables list")
+                                continue
 
                         # check if the table is in the list of S3 locations and if not skip it
                         fully_qualified_table_name = f"{metric.get('schema')}.{metric.get('table_name')}"
                         if fully_qualified_table_name not in s3_location_list["fully_qualified_table_name"].values:
-                            logger.debug(f"Skipping table {fully_qualified_table_name} as it is not in the S3 location list")
+                            logger.debug(f"Skipping {object} as it is not in the S3 location list")
                             continue
 
-                        # build key of dictionary with the fully qualified table name
-                        #key = f"{metric.get('catalog')}.{metric.get('schema')}.{metric.get('table_name')}"
-                        key = f"{metric.get('schema')}.{metric.get('table_name')}"
-
                         timestamp = metric.get('event_time', 0)  # Assuming event_time is in milliseconds
+                        if timestamp > consume_until_timestamp_ms:
+                            logger.debug(f"Skipping {object} as event_time {timestamp} is after the consume_until_timestamp_ms {consume_until_timestamp_ms}")
+                            continue
     
                         # Store only the latest value based on timestamp
+                        key = fully_qualified_table_name
                         if key:
                             if key not in latest_values or timestamp > latest_values[key]['timestamp']:
                                 latest_values[key] = {
@@ -378,7 +396,7 @@ def init_actual_values_from_kafka(filter_catalog: Optional[str] = None, filter_s
     return latest_values
 
 # all the latest values from Kafka (applying a potential filer set via environment variables)
-latest_values = init_actual_values_from_kafka(FILTER_CATALOG, FILTER_SCHEMA, FILTER_TABLES, FILTER_BATCH, FILTER_STAGE)
+latest_values = init_actual_values_from_kafka(FILTER_CATALOGS, FILTER_SCHEMAS, FILTER_TABLES, FILTER_BATCH, FILTER_STAGE)
  
 # collection of fully qualified table names
 fully_qualified_table_names = list(latest_values.keys())
