@@ -177,7 +177,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
                 SELECT
                     r.*,
                     {batching_expr} + 1 AS batch,
-                    {batching_expr} % {nof_stages} + 1 AS stage
+                    FLOOR ({batching_expr} / ({number_of_batches}/{nof_stages})) + 1 AS stage
                 FROM
                     (
                     SELECT
