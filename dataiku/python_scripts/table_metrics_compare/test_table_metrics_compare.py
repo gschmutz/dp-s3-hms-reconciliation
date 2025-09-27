@@ -326,7 +326,7 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
 
                         timestamp = metric.get('event_time', 0)  # Assuming event_time is in milliseconds
                         if timestamp > consume_until_timestamp_ms:
-                            logger.info(f"Skipping {object} as event_time {timestamp} is after the consume_until_timestamp_ms {consume_until_timestamp_ms}")
+                            logger.info(f"Skipping {object} as event_time={timestamp} is after the consume_until_timestamp_ms={consume_until_timestamp_ms}")
                             continue
     
                         # Store only the latest value based on timestamp
