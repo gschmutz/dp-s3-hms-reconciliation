@@ -173,8 +173,9 @@ filtered_tables = get_tables(FILTER_DATABASE, filter_tables)
 s3_location_list = get_s3_location_list(s3, S3_ADMIN_BUCKET, S3_LOCATION_LIST_OBJECT_NAME, FILTER_BATCH,FILTER_STAGE)
 filtered_tables = filtered_tables[filtered_tables["fully_qualified_table_name"].isin(s3_location_list["fully_qualified_table_name"])]
 
+@pytest.mark.skipif(not HMS_VERSION == "4", reason="Not HMS version 3.x")
 @pytest.mark.parametrize("table", filtered_tables.iterrows())
-def test_repair(table: pd.Series):
+def test_repair_trino(table: pd.Series):
 
     table_name = table[1]["TBL_NAME"]
     database = table[1]["DATABASE_NAME"]
@@ -189,4 +190,28 @@ def test_repair(table: pd.Series):
             conn.execute(text(f"call {TRINO_CATALOG}.system.sync_partition_metadata('{database}', '{table_name}', 'FULL')"))
         else:
             logger.info(f"DRY RUN - would execute repairing table {database}.{table_name} via Trino")
+    assert True
+
+@pytest.mark.skipif(not HMS_VERSION == "3", reason="Not HMS version 3.x")
+@pytest.mark.parametrize("table", filtered_tables.iterrows())
+def test_repair_hive(table: pd.Series):
+    conn = hive.Connection(host=HMS_HOST, port=HMS_PORT, database="default")
+
+    table_name = table[1]["TBL_NAME"]
+    database = table[1]["DATABASE_NAME"]
+    has_partitions = table[1]["has_partitions"]
+
+    # execute MSCK REPAIR
+    if has_partitions == "N":
+        logger.info(f"Skipping table {database}.{table_name} as it has no partitions")
+        return
+    if not DRY_RUN:
+        logger.info(f"Executing repairing table {database}.{table_name} via HiveServer2") 
+
+        cursor = conn.cursor()
+        cursor.execute(f"MSCK REPAIR TABLE {database}.{table_name}")
+        cursor.close()
+    else:
+        logger.info(f"DRY RUN - would execute repairing table {database}.{table_name} via Trino")
+
     assert True
