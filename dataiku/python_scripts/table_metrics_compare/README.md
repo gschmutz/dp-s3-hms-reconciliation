@@ -29,6 +29,8 @@ export FILTER_TABLES=
 export FILTER_BATCH=
 export FILTER_STAGE=
 
+export RESTORE_TARGET_TIMESTAMP_MS=
+
 export TRINO_USER=trino
 export TRINO_PASSWORD=
 export TRINO_HOST=localhost

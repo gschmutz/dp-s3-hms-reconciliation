@@ -65,7 +65,7 @@ FILTER_TABLES = get_param('FILTER_TABLES', "")
 FILTER_BATCH = get_param('FILTER_BATCH', "")                    # either all or a specific batch number, if empty it will not use the batch filter at all
 FILTER_STAGE = get_param('FILTER_STAGE', "")                    # either all or a specific stage number, if empty it will not use the stage filter at all
 
-RESTORE_TARGET_TIMESTAMP = get_param('RESTORE_TARGET_TIMESTAMP', None)  # if set will be used to restore the baseline counts from Kafka at a specific point in time (unix timestamp in milliseconds)
+RESTORE_TARGET_TIMESTAMP_MS = get_param('RESTORE_TARGET_TIMESTAMP_MS', None)  # if set will be used to restore the baseline counts from Kafka at a specific point in time (unix timestamp in milliseconds)
  
 TRINO_USER = get_credential('TRINO_USER', 'trino')
 TRINO_PASSWORD = get_credential('TRINO_PASSWORD', '')
@@ -233,8 +233,8 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
     s3_location_list = get_s3_location_list(s3, S3_ADMIN_BUCKET, S3_LOCATION_LIST_OBJECT_NAME, filter_batch, filter_stage)
 
     consume_until_timestamp_ms: int = int(time.time()) * 1000
-    if RESTORE_TARGET_TIMESTAMP:
-        consume_until_timestamp_ms = int(RESTORE_TARGET_TIMESTAMP)  
+    if RESTORE_TARGET_TIMESTAMP_MS:
+        consume_until_timestamp_ms = int(RESTORE_TARGET_TIMESTAMP_MS)
 
     # read from kafka
     if KAFKA_SECURITY_PROTOCOL == 'SSL':
