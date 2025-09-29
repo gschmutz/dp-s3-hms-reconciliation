@@ -126,11 +126,11 @@ def get_tables(filter_database: Optional[str] = None, filter_tables: Optional[li
         catalog_name = f"{HMS_TRINO_CATALOG}."
 
     if filter_database and filter_tables:
-        filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}' AND t.\"TBL_NAME\" IN ({filter_tables})"
+        filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}' AND t.\"TBL_NAME\" = '{filter_tables}'"
     elif filter_database:
         filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}'"
     elif filter_tables:
-        filter_where_clause = f"WHERE t.\"TBL_NAME\" IN ({filter_tables})"
+        filter_where_clause = f"WHERE t.\"TBL_NAME\" = '{filter_tables}'"
     else:
         filter_where_clause = ""            
 
