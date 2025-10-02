@@ -44,7 +44,7 @@ import logging
 from sqlalchemy import create_engine, inspect, text
 from datetime import datetime, timezone
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from util import get_param, get_credential, get_zone_name, replace_vars_in_string, get_s3_location_list
+from util import get_param, get_credential, get_zone_name, replace_vars_in_string, get_s3_location_list, get_partition_info
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -269,6 +269,20 @@ def test_partition_fingerprints(s3_location: str):
     if partition["partition_count"] > 0: 
         fingerprint = hashlib.sha256(partition["part_names"].encode('utf-8')).hexdigest()
 
-        assert partition_fingerprint[s3_location] == fingerprint, f"Partition fingerprint mismatch for {s3_location} in Hive Metastore: expected {partition_fingerprint[s3_location]} (S3), but got {fingerprint} (HMS) at timestamp {max_timestamp}"
+        if partition_fingerprint[s3_location] == fingerprint:
+            assert True
+        else:
+            partition_info = get_partition_info(s3, s3_location)
+            
+            partition_list_s3 = partition_info.get("partition_list", [])
+            partition_list_hms = partition["part_names"].split(",") if partition["part_names"] else []
+            
+            diff_s3 = set(partition_list_s3) - set(partition_list_hms)
+            diff_hms = set(partition_list_hms) - set(partition_list_s3)
+            
+            logger.warning(f"Partitions in S3 but not in HMS: {diff_s3}")
+            logger.warning(f"Partitions in HMS but not in S3: {diff_hms}")
+            
+            assert partition_fingerprint[s3_location] == fingerprint, f"Partition fingerprint mismatch for {s3_location} in Hive Metastore: expected {partition_fingerprint[s3_location]} (S3), but got {fingerprint} (HMS) at timestamp {max_timestamp}. Partitions in S3 but not in HMS: {diff_s3}. Partitions in HMS but not in S3: {diff_hms}"
     else:
         assert True    

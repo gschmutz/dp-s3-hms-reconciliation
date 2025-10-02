@@ -209,6 +209,7 @@ def get_partition_info(s3, s3a_url):
                 latest_ts = obj["LastModified"]                
 
     fingerprint = ""
+    sorted_partitions = []
     if len(partitions) > 0:
         sorted_partitions = sorted(partitions)
         joined = ",".join(sorted_partitions)
@@ -217,6 +218,7 @@ def get_partition_info(s3, s3a_url):
     return {
         "s3_location": s3a_url,
         "partition_count": len(partitions),
+        "partition_list": sorted_partitions,
         "fingerprint": fingerprint,
         "timestamp": int(latest_ts.timestamp())
     }
