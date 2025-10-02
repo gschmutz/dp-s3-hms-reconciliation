@@ -7,3 +7,4 @@ dataiku/python_scripts/s3_hms_compare/baseline_s3.csv
 /dataiku/python_scripts/s3_hms_compare/report
 dataiku/python_scripts/s3_locations_list/s3_locations.csv
 /dataiku/python_scripts/verify_hms_availability/report
+dataiku/python_scripts/s3_hms_compare/PZ_baseline_s3.csv

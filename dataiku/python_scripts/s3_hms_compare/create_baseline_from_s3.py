@@ -20,14 +20,12 @@ import os
 import sys
 import hashlib
 import logging
-from datetime import datetime
 from collections import defaultdict
-from datetime import datetime, timezone
 from urllib.parse import urlparse
 from sqlalchemy import create_engine, select, text, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from util import get_param, get_credential, get_zone_name, replace_vars_in_string
+from util import get_param, get_credential, get_zone_name, replace_vars_in_string, get_partition_info
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -123,11 +121,13 @@ def get_s3_locations_for_tables(filter_database=None, filter_tables=None):
         catalog_name = f"{HMS_TRINO_CATALOG}."
 
     if filter_database and filter_tables:
-        filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}' AND t.\"TBL_NAME\" IN ({filter_tables})"
+        filter_tables_str = ",".join([f"'{tbl.strip()}'" for tbl in filter_tables.split(",")])
+        filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}' AND t.\"TBL_NAME\" IN ({filter_tables_str})"
     elif filter_database:
         filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}'"
     elif filter_tables:
-        filter_where_clause = f"WHERE t.\"TBL_NAME\" IN ({filter_tables})"
+        filter_tables_str = ",".join([f"'{tbl.strip()}'" for tbl in filter_tables.split(",")])
+        filter_where_clause = f"WHERE t.\"TBL_NAME\" IN ({filter_tables_str})"
     else:
         filter_where_clause = ""    
 
@@ -172,64 +172,11 @@ def get_s3_locations_for_tables(filter_database=None, filter_tables=None):
                 s."LOCATION",
                 pk.has_partitions
         """))
+
+        logger.debug(f"Executing SQL: {stmt}")
+        
         s3_locations = session.execute(stmt).scalars().all()
         return s3_locations
-
-def get_partition_info(s3a_url):
-    """
-    Analyzes an S3 location to extract partition information.
-    Converts an S3A URL to an S3 URL, lists objects under the specified prefix,
-    and detects partition-style folder structures (e.g., col=value). Collects
-    all unique partitions, determines the latest modification timestamp among
-    objects, and generates a fingerprint of the partition set.
-    Args:
-        s3a_url (str): The S3A URL pointing to the location to analyze.
-    Returns:
-        dict: A dictionary containing:
-            - "s3_location" (str): The original S3A URL.
-            - "partition_count" (int): Number of unique partitions detected.
-            - "fingerprint" (str): SHA256 hash of the sorted partition list.
-            - "timestamp" (int): Unix timestamp of the latest modification.
-    """
-    # Convert s3a:// to s3://
-    s3_url = s3a_url.replace("s3a://", "s3://")
-    parsed = urlparse(s3_url)
-    bucket = parsed.netloc
-    prefix = parsed.path.lstrip("/") + "/"
-
-    print(f"Analyzing S3 location: bucket={bucket}, prefix={prefix}")
-
-    paginator = s3.get_paginator("list_objects_v2")
-    page_iterator = paginator.paginate(Bucket=bucket, Prefix=prefix)
-
-    partitions = set()
-    latest_ts = datetime(1970, 1, 1, tzinfo=timezone.utc)
-
-    for page in page_iterator:
-        for obj in page.get("Contents", []):
-            key = obj["Key"]
-#            print("key: " + key)
-            # Detect partition-style folder structure like col=value
-            parts = key[len(prefix):].strip("/").split("/")
-            partition_parts = [p for p in parts if "=" in p]
-            if partition_parts:
-                partitions.add("/".join(partition_parts))
-            if obj["LastModified"] > latest_ts:
-                logger.debug(f"Found new latest partition: {key} (last modified: {obj['LastModified']})")
-                latest_ts = obj["LastModified"]                
-
-    fingerprint = ""
-    if len(partitions) > 0:
-        sorted_partitions = sorted(partitions)
-        joined = ",".join(sorted_partitions)
-        fingerprint = hashlib.sha256(joined.encode('utf-8')).hexdigest()
-                      
-    return {
-        "s3_location": s3a_url,
-        "partition_count": len(partitions),
-        "fingerprint": fingerprint,
-        "timestamp": int(latest_ts.timestamp())
-    }
 
 S3_BASELINE_OBJECT_NAME = replace_vars_in_string(S3_BASELINE_OBJECT_NAME, { "database": FILTER_DATABASE.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
 
@@ -244,7 +191,7 @@ with open(S3_BASELINE_OBJECT_NAME, "w") as f:
     # Iterate through Hive tables
     for s3_location in s3_locations:
         
-        info = get_partition_info(f"{s3_location.location}")
+        info = get_partition_info(s3, f"{s3_location.location}")
         print(f"{s3_location.fully_qualified_table_name},{s3_location.database_name},{s3_location.table_name},{s3_location.has_partitions},{info['s3_location']},{info['partition_count']},{info['fingerprint']},{info['timestamp']}", file=f)
 
 # upload the file to S3 to make it available

@@ -81,4 +81,4 @@ pytest test_s3_hms_compare.py --verbose
 ```
 
 
-The comparision is driven by the s3 locations in the file.
+The comparison is driven by the s3 locations in the file.

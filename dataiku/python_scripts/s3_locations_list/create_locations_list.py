@@ -160,7 +160,8 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
         catalog_name = f"{HMS_TRINO_CATALOG}."
 
     if filter_database and filter_tables:
-        filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}' AND t.\"TBL_NAME\" IN ({filter_tables})"
+        filter_tables_str = ",".join([f"'{tbl.strip()}'" for tbl in filter_tables.split(",")])
+        filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}' AND t.\"TBL_NAME\" IN ({filter_tables_str})"
     elif filter_database:
         filter_where_clause = f"WHERE d.\"NAME\" = '{filter_database}'"
     elif filter_tables:

@@ -2,8 +2,11 @@ import logging
 import os
 import re
 import boto3
+import hashlib
 import pandas as pd
 import io
+from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -147,3 +150,73 @@ def get_s3_location_list(s3: boto3.client, s3_admin_bucket: str, s3_location_lis
         logger.info(s3_location_list)
 
     return s3_location_list
+
+def is_hidden(path):
+    """
+    Determines if a given path is considered hidden.
+    A path is considered hidden if any of its components start with an underscore (_) or a dot (.).
+    Args:
+        path (str): The path to check.
+
+    Returns:
+        bool: True if the path is hidden, False otherwise.
+    """
+    components = path.split("/")
+    return any(comp.startswith(".") for comp in components[:-1])
+
+def get_partition_info(s3, s3a_url):
+    """
+    Analyzes an S3 location to extract partition information.
+    Converts an S3A URL to an S3 URL, lists objects under the specified prefix,
+    and detects partition-style folder structures (e.g., col=value). Collects
+    all unique partitions, determines the latest modification timestamp among
+    objects, and generates a fingerprint of the partition set.
+    Args:
+        s3 (boto3.client): An initialized boto3 S3 client.
+        s3a_url (str): The S3A URL pointing to the location to analyze.
+    Returns:
+        dict: A dictionary containing:
+            - "s3_location" (str): The original S3A URL.
+            - "partition_count" (int): Number of unique partitions detected.
+            - "fingerprint" (str): SHA256 hash of the sorted partition list.
+            - "timestamp" (int): Unix timestamp of the latest modification.
+    """
+    # Convert s3a:// to s3://
+    s3_url = s3a_url.replace("s3a://", "s3://")
+    parsed = urlparse(s3_url)
+    bucket = parsed.netloc
+    prefix = parsed.path.lstrip("/") + "/"
+
+    print(f"Analyzing S3 location: bucket={bucket}, prefix={prefix}")
+
+    paginator = s3.get_paginator("list_objects_v2")
+    page_iterator = paginator.paginate(Bucket=bucket, Prefix=prefix)
+
+    partitions = set()
+    latest_ts = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+    for page in page_iterator:
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            #print("key: " + key)
+            # Detect partition-style folder structure like col=value
+            parts = key[len(prefix):].strip("/").split("/")
+            partition_parts = [p for p in parts if "=" in p]
+            if not is_hidden(key) and partition_parts:
+                partitions.add("/".join(partition_parts))
+            if obj["LastModified"] > latest_ts:
+                logger.debug(f"Found new latest partition: {key} (last modified: {obj['LastModified']})")
+                latest_ts = obj["LastModified"]                
+
+    fingerprint = ""
+    if len(partitions) > 0:
+        sorted_partitions = sorted(partitions)
+        joined = ",".join(sorted_partitions)
+        fingerprint = hashlib.sha256(joined.encode('utf-8')).hexdigest()
+                      
+    return {
+        "s3_location": s3a_url,
+        "partition_count": len(partitions),
+        "fingerprint": fingerprint,
+        "timestamp": int(latest_ts.timestamp())
+    }
