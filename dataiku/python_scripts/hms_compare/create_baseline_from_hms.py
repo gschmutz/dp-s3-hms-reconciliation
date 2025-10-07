@@ -41,6 +41,7 @@ ZONE = get_zone_name(upper=True)
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 ENV = get_param('ENV', 'UAT', upper=True)
 FILTER_TABLES = get_param('FILTER_TABLES', "")
+FILTER_TIMESTAMP = get_param('FILTER_TIMESTAMP', None)  # timestamp in seconds since epoch, e.g. 1693440000 for 2023-08-31 00:00:00 UTC
 
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
 
@@ -127,6 +128,19 @@ def get_table_names(filter_tables=None):
 def quote_ident(name: str, dialect):
     return dialect.identifier_preparer.quote(name)
 
+def get_columns(engine, table: str, schema: str = "public"):
+    with engine.connect() as conn:
+
+        stmt = text(f"""
+            SELECT column_name
+            FROM  hive_metastore_db.information_schema.columns c 
+            WHERE UPPER(c.table_name) = UPPER('{table}')
+            AND UPPER(c.table_schema) = UPPER('{schema}')
+            AND c.data_type NOT IN ('varbinary')
+        """)
+
+        result = conn.execute(stmt)
+        return [row[0] for row in result]
 
 def generate_baseline_for_table(engine, table: str, schema: str = "public", filter_timestamp: int = None):
     """
@@ -147,6 +161,7 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
         - The function prints a message if no primary key is found for the table.
         - The function assumes the existence of certain metadata tables (PARTITIONS, TBLS, DBS) for join operations.
     """
+    row = None
     if src_engine.dialect.name == 'postgresql':
         catalog_name = ""
     else:
@@ -155,8 +170,10 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
     with src_engine.connect() as conn:
         # Step 1: Get primary key columns
         inspector = inspect(conn)
-        pk_columns = inspector.get_pk_constraint(table, schema=schema)['constrained_columns']
-
+        #pk_columns = inspector.get_pk_constraint(table, schema=catalog_name + "." + schema)['constrained_columns']
+        all_columns = get_columns(engine, table, schema)
+        #print(all_columns)
+        pk_columns = [all_columns[0]]  # assume first column is PK if no PK defined in HMS
         if not pk_columns:
             print(f"No primary key found for table {schema}.{table}")
         else:
@@ -165,6 +182,25 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
             order_by_clause = ", ".join("t." + quote_ident(col,dialect=conn.dialect) for col in pk_columns)
 
             print (f"Generating fingerprint for table {full_table} using PK columns: {pk_columns}")
+
+            if src_engine.dialect.name == 'postgresql':
+                row_to_text_expr = "row(t.*)::text"
+                hash_expr = "md5(string_agg(md5(row_text), ''))"
+            else:
+                format_args = ",".join([f"CAST(t.{quote_ident(col, dialect=conn.dialect)} AS varchar)" for col in all_columns])
+                format_str = ",".join(["%s"] * len(all_columns))
+                row_to_text_expr = f"format('{format_str}', {format_args})"
+                hash_expr = """to_hex(
+                                md5(
+                                    CAST(
+                                        array_join(
+                                            array_agg(to_hex(md5(CAST(row_text AS varbinary)))),
+                                            ''
+                                        ) AS varbinary
+                                    )
+                                )
+                            )
+                            """                                           
 
             create_time_table_join = ""
             create_time_col = ""
@@ -182,28 +218,30 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
                 create_time_col = f', ct."CREATE_TIME" AS create_time'
                 create_time_col_alias = f', MAX(create_time) AS max_create_time'
 
+            timestamp_where_clause = ""
             if filter_timestamp and create_time_col:
-                timestamp_where_clause = f"WHERE ct.\"CREATE_TIME\" > {filter_timestamp}"
+                timestamp_where_clause = f"WHERE ct.\"CREATE_TIME\" <= {filter_timestamp}"
 
             # Step 3: Prepare and execute SQL
             query = text(f"""
                 SELECT COUNT(*) AS row_count
-                , md5(string_agg(md5(row_text), '')) AS fingerprint
+                , {hash_expr} AS fingerprint
                 {create_time_col_alias}
                 FROM (
-                    SELECT row(t.*)::text AS row_text
+                    SELECT {row_to_text_expr} AS row_text
                     {create_time_col}
-                    FROM {full_table} t
+                    FROM {catalog_name}{full_table} t
                     {create_time_table_join}
                     {timestamp_where_clause}
                     ORDER BY {order_by_clause}
                 ) AS subquery  
             """)
 
-        logger.debug(f"Executing SQL: {stmt}")
+            logger.debug(f"Executing SQL: {query}")
         
-        s3_locations = session.execute(stmt).scalars().all()
-        return s3_locations
+            result = conn.execute(query)
+            row = result.fetchone()
+        return row
 
 HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "zone": ZONE.upper(), "env": ENV.upper() } )
 
@@ -228,8 +266,7 @@ def create_baseline():
     """
     tables = get_table_names(FILTER_TABLES)
 
-    S3_BASELINE_OBJECT_NAME = "hms_baseline.csv"
-    with open(S3_BASELINE_OBJECT_NAME, "w") as f:
+    with open(HMS_BASELINE_OBJECT_NAME, "w") as f:
         # Print CSV header
         print("table_name,count,fingerprint,timestamp", file=f)
 
@@ -240,7 +277,7 @@ def create_baseline():
                 continue
             else:
                 with src_engine.connect() as conn:
-                    baseline = generate_baseline_for_table(src_engine, table, "public", filter_timestamp=None)
+                    baseline = generate_baseline_for_table(src_engine, table, "public", filter_timestamp=FILTER_TIMESTAMP)
 
                 if baseline is not None:
                     count = baseline[0]
