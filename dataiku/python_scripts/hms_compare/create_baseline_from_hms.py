@@ -137,7 +137,7 @@ def get_columns(engine, table: str, schema: str = "public"):
     with engine.connect() as conn:
 
         stmt = text(f"""
-            SELECT column_name
+            SELECT lower(column_name)  AS column_name
             FROM  {catalog_name}information_schema.columns c 
             WHERE UPPER(c.table_name) = UPPER('{table}')
             AND UPPER(c.table_schema) = UPPER('{schema}')
@@ -210,15 +210,15 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
             create_time_table_join = ""
             create_time_col = ""
             create_time_col_alias = ""
-            if "PART_ID" in pk_columns:
+            if "PART_ID".lower() in all_columns:
                 create_time_table_join = f"LEFT JOIN {catalog_name}public.\"PARTITIONS\" ct ON ct.\"PART_ID\" = t.\"PART_ID\""
                 create_time_col = f', ct."CREATE_TIME" AS create_time'
                 create_time_col_alias = f', MAX(create_time) AS max_create_time'
-            if "TBL_ID" in pk_columns:
+            if "TBL_ID".lower() in all_columns:
                 create_time_table_join = f"LEFT JOIN {catalog_name}public.\"TBLS\" ct ON ct.\"TBL_ID\" = t.\"TBL_ID\""
                 create_time_col = f', ct."CREATE_TIME" AS create_time'
                 create_time_col_alias = f', MAX(create_time) AS max_create_time'
-            if "DB_ID" in pk_columns:
+            if "DB_ID".lower() in all_columns:
                 create_time_table_join = f"LEFT JOIN {catalog_name}public.\"DBS\" ct ON ct.\"DB_ID\" = t.\"DB_ID\""
                 create_time_col = f', ct."CREATE_TIME" AS create_time'
                 create_time_col_alias = f', MAX(create_time) AS max_create_time'
