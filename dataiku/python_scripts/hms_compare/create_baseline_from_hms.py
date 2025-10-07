@@ -129,11 +129,16 @@ def quote_ident(name: str, dialect):
     return dialect.identifier_preparer.quote(name)
 
 def get_columns(engine, table: str, schema: str = "public"):
+    if src_engine.dialect.name == 'postgresql':
+        catalog_name = ""
+    else:
+        catalog_name = f"{HMS_TRINO_CATALOG}."
+            
     with engine.connect() as conn:
 
         stmt = text(f"""
             SELECT column_name
-            FROM  hive_metastore_db.information_schema.columns c 
+            FROM  {catalog_name}information_schema.columns c 
             WHERE UPPER(c.table_name) = UPPER('{table}')
             AND UPPER(c.table_schema) = UPPER('{schema}')
             AND c.data_type NOT IN ('varbinary')
