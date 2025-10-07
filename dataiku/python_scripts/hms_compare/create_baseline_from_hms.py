@@ -1,19 +1,23 @@
 """
-This script creates a baseline CSV file containing metadata and partition information for tables stored in S3, as referenced by a Hive Metastore (HMS) database. It supports both PostgreSQL and Trino as HMS backends and can run inside or outside Dataiku DSS scenarios.
+This script generates a baseline fingerprint for tables in the Hive Metastore (HMS) database and uploads the results to an S3-compatible storage (such as MinIO or AWS S3). The baseline includes row counts, fingerprints (MD5 hashes of table rows), and optional creation timestamps for each table. The script supports both PostgreSQL and Trino as backend databases for HMS, and allows filtering of tables via environment variables.
 Main functionalities:
-- Retrieves configuration parameters and credentials from Dataiku scenario variables or environment variables.
-- Connects to HMS database (PostgreSQL or Trino) to fetch table metadata, including S3 locations.
-- For each table, analyzes the corresponding S3 location to determine partition structure, count, fingerprint, and latest modification timestamp.
-- Writes the collected information to a CSV file.
-- Optionally uploads the CSV file to an S3 bucket.
-Key components:
-- Parameter and credential retrieval functions (`get_param`, `get_credential`)
-- SQLAlchemy ORM mapping for table metadata (`S3Location`)
-- Functions to query HMS for S3 locations and analyze S3 partition info
-- S3 client configuration supporting MinIO and AWS S3
-- Logging for operational visibility
-Environment variables and scenario parameters allow filtering by database and table, configuring S3 endpoints, and controlling upload behavior.
-
+- Connects to the HMS database using SQLAlchemy, supporting both PostgreSQL and Trino.
+- Retrieves table names, optionally filtered by environment variables.
+- For each table, computes:
+    - Row count.
+    - Fingerprint (MD5 hash) of all rows, ordered by primary key.
+    - Maximum creation timestamp, if available.
+- Writes the baseline data to a CSV file.
+- Uploads the CSV file to an S3-compatible bucket if enabled.
+Environment variables and credentials are used for configuration, including database access, S3 endpoint, and filtering options.
+Dependencies:
+- boto3
+- sqlalchemy
+- psycopg2 or trino dialect for SQLAlchemy
+- Custom utility functions: get_param, get_credential, get_zone_name, replace_vars_in_string
+Usage:
+- Configure environment variables and credentials as needed.
+- Run the script to generate and upload the baseline CSV.
 """
 import boto3
 import os
@@ -87,6 +91,18 @@ if AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY:
 s3 = boto3.client(**s3_config)
 
 def get_table_names(filter_tables=None):
+    """
+    Retrieves a list of table names from the source database's public schema, optionally filtering by a comma-separated list of table names.
+    Args:
+        filter_tables (str, optional): A comma-separated string of table names to filter the results. If None, all base tables are returned.
+    Returns:
+        list: A list of table names (str) matching the criteria from the source database.
+    Raises:
+        Any exceptions raised by the underlying database connection or query execution.
+    Notes:
+        - The function adapts the query for PostgreSQL or other SQL engines (e.g., Trino) based on the source engine's dialect.
+        - Only tables of type 'BASE TABLE' in the 'public' schema are considered.
+    """
     if src_engine.dialect.name == 'postgresql':
         catalog_name = ""
     else:
@@ -112,10 +128,25 @@ def quote_ident(name: str, dialect):
     return dialect.identifier_preparer.quote(name)
 
 
-def generate_baseline_for_table(engine, table: str, schema: str = "public"):
+def generate_baseline_for_table(engine, table: str, schema: str = "public", filter_timestamp: int = None):
     """
+    Generates a baseline fingerprint and row count for a given table using its primary key columns.
+    This function connects to the specified database engine, inspects the table to determine its primary key columns,
+    and generates a fingerprint by hashing the concatenated text representation of each row, ordered by the primary key.
+    If the table contains certain key columns (PART_ID, TBL_ID, or DB_ID), it also joins with the corresponding metadata
+    table to include the creation time in the result.
+    Args:
+        engine: SQLAlchemy engine object used to connect to the database.
+        table (str): Name of the table for which to generate the baseline.
+        schema (str, optional): Schema name of the table. Defaults to "public".
+    Returns:
+        List: The result of the executed SQL query, typically containing row count, fingerprint, and optionally the maximum creation time.
+    Raises:
+        Exception: If there is an error during database connection or SQL execution.
+    Notes:
+        - The function prints a message if no primary key is found for the table.
+        - The function assumes the existence of certain metadata tables (PARTITIONS, TBLS, DBS) for join operations.
     """
-
     if src_engine.dialect.name == 'postgresql':
         catalog_name = ""
     else:
@@ -151,6 +182,9 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public"):
                 create_time_col = f', ct."CREATE_TIME" AS create_time'
                 create_time_col_alias = f', MAX(create_time) AS max_create_time'
 
+            if filter_timestamp and create_time_col:
+                timestamp_where_clause = f"WHERE ct.\"CREATE_TIME\" > {filter_timestamp}"
+
             # Step 3: Prepare and execute SQL
             query = text(f"""
                 SELECT COUNT(*) AS row_count
@@ -161,6 +195,7 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public"):
                     {create_time_col}
                     FROM {full_table} t
                     {create_time_table_join}
+                    {timestamp_where_clause}
                     ORDER BY {order_by_clause}
                 ) AS subquery  
             """)
@@ -176,6 +211,21 @@ HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "z
 tables = get_table_names()
 
 def create_baseline():
+    """
+    Generates a baseline CSV file containing metadata for a set of tables and optionally uploads it to S3.
+    This function retrieves a list of table names, filters out specific system or internal tables, and for each remaining table,
+    generates a baseline consisting of the row count, a fingerprint, and a timestamp. The results are written to a CSV file.
+    If S3 upload is enabled, the CSV file is uploaded to a specified S3 bucket.
+    Returns:
+        None
+    Side Effects:
+        - Writes a CSV file named "hms_baseline.csv" to the local filesystem.
+        - Optionally uploads the CSV file to an S3 bucket if S3_UPLOAD_ENABLED is True.
+        - Logs upload actions using the logger.
+    Dependencies:
+        - Assumes the existence of functions and variables: get_table_names, FILTER_TABLES, src_engine,
+          generate_baseline_for_table, S3_UPLOAD_ENABLED, logger, HMS_BASELINE_OBJECT_NAME, S3_ADMIN_BUCKET, s3.
+    """
     tables = get_table_names(FILTER_TABLES)
 
     S3_BASELINE_OBJECT_NAME = "hms_baseline.csv"
@@ -190,7 +240,7 @@ def create_baseline():
                 continue
             else:
                 with src_engine.connect() as conn:
-                    baseline = generate_baseline_for_table(src_engine, table, "public")
+                    baseline = generate_baseline_for_table(src_engine, table, "public", filter_timestamp=None)
 
                 if baseline is not None:
                     count = baseline[0]
