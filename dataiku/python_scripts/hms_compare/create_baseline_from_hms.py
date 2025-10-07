@@ -66,7 +66,7 @@ AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', 'admin')
 AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', 'admin123')
 
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
-HMS_BASELINE_OBJECT_NAME = get_param('HMS_BASELINE_OBJECT_NAME', 'baseline_s3.csv')
+HMS_BASELINE_OBJECT_NAME = get_param('HMS_BASELINE_OBJECT_NAME', 'baseline_hms.csv')
 
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
     # Construct connection URLs
@@ -133,7 +133,7 @@ def get_columns(engine, table: str, schema: str = "public"):
         catalog_name = ""
     else:
         catalog_name = f"{HMS_TRINO_CATALOG}."
-            
+
     with engine.connect() as conn:
 
         stmt = text(f"""
@@ -293,10 +293,10 @@ def create_baseline():
                     timestamp = baseline[2] if len(baseline) > 2 else 0
                     print(f"{table},{count},{fingerprint},{timestamp}", file=f)
                     
-        # upload the file to S3 to make it available
-        if S3_UPLOAD_ENABLED:
-            logger.info(f"Uploading {HMS_BASELINE_OBJECT_NAME} to s3://{S3_ADMIN_BUCKET}/{HMS_BASELINE_OBJECT_NAME}")
-
-            s3.upload_file(HMS_BASELINE_OBJECT_NAME, S3_ADMIN_BUCKET, HMS_BASELINE_OBJECT_NAME)
-
 create_baseline()
+
+# upload the file to S3 to make it available
+if S3_UPLOAD_ENABLED:
+    logger.info(f"Uploading {HMS_BASELINE_OBJECT_NAME} to s3://{S3_ADMIN_BUCKET}/{HMS_BASELINE_OBJECT_NAME}")
+
+    s3.upload_file(HMS_BASELINE_OBJECT_NAME, S3_ADMIN_BUCKET, HMS_BASELINE_OBJECT_NAME)
