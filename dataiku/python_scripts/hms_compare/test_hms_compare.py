@@ -43,7 +43,7 @@ s3 = boto3.client(**s3_config)
 bucket_name = S3_ADMIN_BUCKET
 poll_interval = 60  # seconds
 # === file names ===
-file_keys = [HMS_BASELINE_OBJECT_NAME, 'tasos2.csv']
+file_keys = [HMS_BASELINE_OBJECT_NAME, 'recovered_db_data.csv']
 local_files = ['/tmp/baseline.csv', '/tmp/recovered_db.csv']
 
 # === CHECK IF FILE EXISTS ===
@@ -127,4 +127,5 @@ download_files()
 compare_files()
 print("\nDone. Exiting.")
 cleanup()
+
 print(f"--------------------------------------OUTPUT--------------------------------------")            
