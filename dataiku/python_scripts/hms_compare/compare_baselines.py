@@ -7,6 +7,69 @@ import json
 aws_access_key_id = YOUR_ACCESS_KEY
 aws_secret_access_key = YOUR_SECRET_KEY
 
+
+file_keys = ['incoming/file1.csv', 'incoming/file2.csv']
+local_files = ['/tmp/file1.csv', '/tmp/file2.csv']
+
+def file_exists(key):
+    try:
+        s3.head_object(Bucket=bucket_name, Key=key)
+        return True
+    except s3.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == "404":
+            return False
+        else:
+            raise  # other error
+
+
+
+
+def wait_for_files():
+    print("Waiting for both files to appear...")
+
+    found_files = {key: False for key in file_keys}
+
+    while not all(found_files.values()):
+        for key in file_keys:
+            if not found_files[key]:
+                if file_exists(key):
+                    print(f"Found: {key}")
+                    found_files[key] = True
+        if not all(found_files.values()):
+            time.sleep(poll_interval)
+
+def download_files():
+    for key, local_path in zip(file_keys, local_files):
+        print(f"Downloading {key} to {local_path}")
+        s3.download_file(bucket_name, key, local_path)
+
+def compare_files():
+    with open(local_files[0], 'r') as f1, open(local_files[1], 'r') as f2:
+        f1_lines = f1.readlines()
+        f2_lines = f2.readlines()
+
+    diff = [line for line in f1_lines if line not in f2_lines]
+
+    print("\nDifferences (in file1 but not in file2):")
+    for line in diff:
+        print(line.strip())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Track seen files
 seen_files = set()
 
