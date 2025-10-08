@@ -1,16 +1,30 @@
 import boto3
 import time
-import json
+import pandas as pd
 
+# === CONFIGURATION ===
+endpoint_url = 'http://your-onprem-s3-url:9000'
+access_key = 'your-access-key'
+secret_key = 'your-secret-key'
+bucket_name = 'your-bucket-name'
 
-
-aws_access_key_id = YOUR_ACCESS_KEY
-aws_secret_access_key = YOUR_SECRET_KEY
-
-
+# Files to wait for
 file_keys = ['incoming/file1.csv', 'incoming/file2.csv']
 local_files = ['/tmp/file1.csv', '/tmp/file2.csv']
 
+# Polling interval (in seconds)
+poll_interval = 10
+
+# === CONNECT TO S3 ===
+s3 = boto3.client(
+    's3',
+    endpoint_url=endpoint_url,
+    aws_access_key_id=access_key,
+    aws_secret_access_key=secret_key,
+    region_name='us-east-1',  # dummy region for on-prem
+)
+
+# === CHECK IF FILE EXISTS ===
 def file_exists(key):
     try:
         s3.head_object(Bucket=bucket_name, Key=key)
@@ -19,105 +33,51 @@ def file_exists(key):
         if e.response['Error']['Code'] == "404":
             return False
         else:
-            raise  # other error
+            raise
 
-
-
-
+# === WAIT FOR BOTH FILES ===
 def wait_for_files():
-    print("Waiting for both files to appear...")
+    print(f"Waiting for files:\n- {file_keys[0]}\n- {file_keys[1]}")
+    found = {key: False for key in file_keys}
 
-    found_files = {key: False for key in file_keys}
-
-    while not all(found_files.values()):
+    while not all(found.values()):
         for key in file_keys:
-            if not found_files[key]:
-                if file_exists(key):
-                    print(f"Found: {key}")
-                    found_files[key] = True
-        if not all(found_files.values()):
+            if not found[key] and file_exists(key):
+                print(f"[✔] Found: {key}")
+                found[key] = True
+        if not all(found.values()):
             time.sleep(poll_interval)
 
+# === DOWNLOAD FILES ===
 def download_files():
     for key, local_path in zip(file_keys, local_files):
-        print(f"Downloading {key} to {local_path}")
+        print(f"Downloading {key} → {local_path}")
         s3.download_file(bucket_name, key, local_path)
 
+# === COMPARE FILES USING PANDAS ===
 def compare_files():
-    with open(local_files[0], 'r') as f1, open(local_files[1], 'r') as f2:
-        f1_lines = f1.readlines()
-        f2_lines = f2.readlines()
-
-    diff = [line for line in f1_lines if line not in f2_lines]
-
-    print("\nDifferences (in file1 but not in file2):")
-    for line in diff:
-        print(line.strip())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Track seen files
-seen_files = set()
-
-# Config for on-prem S3 (e.g. MinIO)
-s3 = boto3.client(
-    's3',
-    endpoint_url='http://your-onprem-s3-url:9000',
-    aws_access_key_id='your-access-key',
-    aws_secret_access_key='your-secret-key',
-    region_name='us-east-1',  # arbitrary
-)
-
-bucket_name = 'your-bucket-name'
-poll_interval = 10  # seconds
-
-def list_objects():
-    response = s3.list_objects_v2(Bucket=bucket_name)
-    return [obj['Key'] for obj in response.get('Contents', [])]
-
-while True:
-    print("Checking for new files...")
     try:
-        current_files = set(list_objects())
+        df1 = pd.read_csv(local_files[0])
+        df2 = pd.read_csv(local_files[1])
 
-        # Detect new files
-        new_files = current_files - seen_files
-        for key in new_files:
-            print(f"New file detected: {key}")
-            # You can now download and process the file
-            local_path = f'/tmp/{key.split("/")[-1]}'
-            s3.download_file(bucket_name, key, local_path)
+        # Optional: sort to make comparison order-independent
+        df1_sorted = df1.sort_values(by=df1.columns.tolist()).reset_index(drop=True)
+        df2_sorted = df2.sort_values(by=df2.columns.tolist()).reset_index(drop=True)
 
-            # TODO: Compare the new file here
-            # Compare the files (line by line, as an example)
-            with open(file1_local, 'r') as f1, open(file2_local, 'r') as f2:
-            f1_lines = f1.readlines()
-            f2_lines = f2.readlines()
+        # Compare: rows that are different (in either file)
+        diff = pd.concat([df1_sorted, df2_sorted]).drop_duplicates(keep=False)
 
-            # Simple diff
-            diff_lines = [line for line in f1_lines if line not in f2_lines]
-
-            print("Lines in file1 but not in file2:")
-            for line in diff_lines:
-              print(line.strip())
-
-        seen_files = current_files
-
+        print("\n=== Differences Between CSV Files ===")
+        if diff.empty:
+            print("✅ No differences found. Files are identical (row-wise).")
+        else:
+            print(diff)
     except Exception as e:
-        print(f"Error while polling: {e}")
+        print(f"⚠️ Error comparing files: {e}")
 
-    time.sleep(poll_interval)
+# === MAIN ===
+if __name__ == "__main__":
+    wait_for_files()
+    download_files()
+    compare_files()
+    print("\n✅ Done. Exiting.")
