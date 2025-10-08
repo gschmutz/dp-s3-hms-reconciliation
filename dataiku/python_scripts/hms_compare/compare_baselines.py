@@ -75,9 +75,30 @@ def compare_files():
     except Exception as e:
         print(f"⚠️ Error comparing files: {e}")
 
+# === DELETE FILES FROM S3 AND LOCAL ===
+def cleanup():
+    print("\n🧹 Cleaning up...")
+
+    # Delete from S3
+    for key in file_keys:
+        try:
+            s3.delete_object(Bucket=bucket_name, Key=key)
+            print(f"🗑️ Deleted from S3: {key}")
+        except Exception as e:
+            print(f"⚠️ Failed to delete {key} from S3: {e}")
+
+    # Delete local files
+    for path in local_files:
+        try:
+            os.remove(path)
+            print(f"🗑️ Deleted local file: {path}")
+        except Exception as e:
+            print(f"⚠️ Failed to delete local file {path}: {e}")
+
 # === MAIN ===
 if __name__ == "__main__":
     wait_for_files()
     download_files()
     compare_files()
-    print("\n✅ Done. Exiting.")
+    cleanup()
+    print("\n✅ All done. Exiting.")
