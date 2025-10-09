@@ -38,7 +38,7 @@ from util import get_param, get_credential, get_zone_name, replace_vars_in_strin
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-ZONE = get_zone_name(upper=True)
+ZONE = get_zone_name(upper=False)
 
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 ENV = get_param('ENV', 'UAT', upper=True)
@@ -68,7 +68,9 @@ AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', 'admin123')
 
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
 HMS_BASELINE_OBJECT_NAME = get_param('HMS_BASELINE_OBJECT_NAME', 'baseline_hms.csv')
-HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "zone": ZONE.upper(), "env": ENV.upper() } )
+HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "zone": ZONE, "env": ENV } )
+
+HMS_BASELINE_FILE_NAME = HMS_BASELINE_OBJECT_NAME.replace('/', '__')
 
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
     # Construct connection URLs
@@ -239,7 +241,7 @@ def create_baseline():
     """
     tables = get_table_names(engine=src_engine, catalog_name=catalog_name)
 
-    with open(HMS_BASELINE_OBJECT_NAME, "w") as f:
+    with open(HMS_BASELINE_FILE_NAME, "w") as f:
         # Print CSV header
         print("table_name,count,fingerprint,timestamp", file=f)
 
@@ -260,6 +262,6 @@ create_baseline()
 
 # upload the file to S3 to make it available
 if S3_UPLOAD_ENABLED:
-    logger.info(f"Uploading {HMS_BASELINE_OBJECT_NAME} to s3://{S3_ADMIN_BUCKET}/{HMS_BASELINE_OBJECT_NAME}")
+    logger.info(f"Uploading {HMS_BASELINE_FILE_NAME} to s3://{S3_ADMIN_BUCKET}/{HMS_BASELINE_OBJECT_NAME}")
 
-    s3.upload_file(HMS_BASELINE_OBJECT_NAME, S3_ADMIN_BUCKET, HMS_BASELINE_OBJECT_NAME)
+    s3.upload_file(HMS_BASELINE_FILE_NAME, S3_ADMIN_BUCKET, HMS_BASELINE_OBJECT_NAME)

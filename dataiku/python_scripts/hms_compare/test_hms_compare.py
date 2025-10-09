@@ -57,10 +57,10 @@ from util import get_param, get_credential, get_zone_name, replace_vars_in_strin
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-ZONE = get_zone_name(upper=True)
+ZONE = get_zone_name(upper=False)
 
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
-ENV = get_param('ENV', 'UAT', upper=True)
+ENV = get_param('ENV', 'UAT', upper=False)
 
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
 
@@ -88,8 +88,8 @@ S3_POLLING_INTERVAL = get_param('S3_POLLING_INTERVAL', '60')
 HMS_BASELINE_OBJECT_NAME = get_param('HMS_BASELINE_OBJECT_NAME', 'baseline_hms.csv')
 HMS_RECOVERED_OBJECT_NAME = get_param('HMS_RECOVERED_OBJECT_NAME', 'recovered_hms.csv')
 
-HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "zone": ZONE.upper(), "env": ENV.upper() } )
-HMS_RECOVERED_OBJECT_NAME = replace_vars_in_string(HMS_RECOVERED_OBJECT_NAME, { "zone": ZONE.upper(), "env": ENV.upper() } )
+HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "zone": ZONE, "env": ENV } )
+HMS_RECOVERED_OBJECT_NAME = replace_vars_in_string(HMS_RECOVERED_OBJECT_NAME, { "zone": ZONE, "env": ENV } )
 
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
     # Construct connection URLs
@@ -120,7 +120,7 @@ s3 = boto3.client(**s3_config)
 tables = get_table_names(engine=src_engine, catalog_name=catalog_name)
     
 file_keys = [HMS_BASELINE_OBJECT_NAME, HMS_RECOVERED_OBJECT_NAME]
-local_files = [f'/tmp/{HMS_BASELINE_OBJECT_NAME}', f'/tmp/{HMS_RECOVERED_OBJECT_NAME}']
+local_files = [f'/tmp/baseline.csv', f'/tmp/recovered.csv']
 
 BASELINE = 'baseline'
 RECOVERED = 'recovered'
