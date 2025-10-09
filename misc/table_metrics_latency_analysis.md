@@ -1,6 +1,6 @@
 # Analysis of table metrics latency
 
-Create the CSV file with the Dataiku scenario and upload it to Minio `admin-bucket` in folder `table_metrics_latency`
+Create the CSV file with the Dataiku scenario and upload it to Minio `admin-bucket` in folder `table_metrics_latency`. The Dataiku scenario reads the messages from the `tch_uat_uat_dpraw_execution_status_log_v1` Kafka topic and calculates the latency of the `post_create_table_metrics`.
 
 ```bash
 docker exec -ti minio-mc mc cp /data-transfer/table_metrics_latency.csv minio-1/admin-bucket/table_metrics_latency/
