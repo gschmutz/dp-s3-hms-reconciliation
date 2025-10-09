@@ -29,6 +29,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 from sqlalchemy import create_engine, select, text, Column, Integer, String, DateTime, inspect
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 from hms_util import get_table_names
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from util import get_param, get_credential, get_zone_name, replace_vars_in_string
