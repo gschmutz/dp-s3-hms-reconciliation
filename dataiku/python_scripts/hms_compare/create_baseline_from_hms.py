@@ -67,6 +67,7 @@ AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', 'admin123')
 
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
 HMS_BASELINE_OBJECT_NAME = get_param('HMS_BASELINE_OBJECT_NAME', 'baseline_hms.csv')
+HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "zone": ZONE.upper(), "env": ENV.upper() } )
 
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
     # Construct connection URLs
@@ -218,8 +219,6 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
             result = conn.execute(query)
             row = result.fetchone()
         return row
-
-HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "zone": ZONE.upper(), "env": ENV.upper() } )
 
 def create_baseline():
     """

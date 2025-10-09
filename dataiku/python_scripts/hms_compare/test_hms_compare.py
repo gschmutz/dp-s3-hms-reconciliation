@@ -78,13 +78,17 @@ HMS_TRINO_USE_SSL = get_param('HMS_TRINO_USE_SSL', 'true').lower() in ('true', '
 
 # Connect to MinIO or AWS S3
 # Read endpoint URL from environment variable, default to localhost MinIO
-S3_UPLOAD_ENABLED = get_param('S3_UPLOAD_ENABLED', 'true').lower() in ['true', '1', 'yes']  
 S3_ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', 'admin')
 AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', 'admin123')
 
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
+S3_POLLING_INTERVAL = get_param('S3_POLLING_INTERVAL', '60')
 HMS_BASELINE_OBJECT_NAME = get_param('HMS_BASELINE_OBJECT_NAME', 'baseline_hms.csv')
+HMS_RECOVERED_OBJECT_NAME = get_param('HMS_RECOVERED_OBJECT_NAME', 'recovered_hms.csv')
+
+HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "zone": ZONE.upper(), "env": ENV.upper() } )
+HMS_RECOVERED_OBJECT_NAME = replace_vars_in_string(HMS_RECOVERED_OBJECT_NAME, { "zone": ZONE.upper(), "env": ENV.upper() } )
 
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
     # Construct connection URLs
@@ -114,12 +118,8 @@ s3 = boto3.client(**s3_config)
 # Dynamically get table names from the source DB
 tables = get_table_names(engine=src_engine, catalog_name=catalog_name)
     
-# === local variables ===
-bucket_name = S3_ADMIN_BUCKET
-poll_interval = 60  # seconds
-# === file names ===
-file_keys = [HMS_BASELINE_OBJECT_NAME, 'recovered_db_data.csv']
-local_files = ['/tmp/baseline.csv', '/tmp/recovered_db.csv']
+file_keys = [HMS_BASELINE_OBJECT_NAME, HMS_RECOVERED_OBJECT_NAME]
+local_files = [f'/tmp/{HMS_BASELINE_OBJECT_NAME}', f'/tmp/{HMS_RECOVERED_OBJECT_NAME}']
 
 BASELINE = 'baseline'
 RECOVERED = 'recovered'
@@ -136,7 +136,7 @@ def file_exists(key):
     """
 
     try:
-        s3.head_object(Bucket=bucket_name, Key=key)
+        s3.head_object(Bucket=S3_ADMIN_BUCKET, Key=key)
         return True
     except s3.exceptions.ClientError as e:
         if e.response['Error']['Code'] == "404":
@@ -166,7 +166,7 @@ def wait_for_files():
                     print(f"Found: {key}")
                     found_files[key] = True
         if not all(found_files.values()):
-            time.sleep(poll_interval)
+            time.sleep(S3_POLLING_INTERVAL)
 
 # === DOWNLOAD FILES ===            
 def download_files():
@@ -184,7 +184,7 @@ def download_files():
     """
     for key, local_path in zip(file_keys, local_files):
         print(f"Downloading {key} to {local_path}")
-        s3.download_file(bucket_name, key, local_path)            
+        s3.download_file(S3_ADMIN_BUCKET, key, local_path)            
 
 # === NO LONGER NEEDED, kept for the meantime ===        
 def compare_table(table: str):
@@ -226,7 +226,7 @@ def cleanup():
     # Delete from S3
     for key in file_keys:
         try:
-            s3.delete_object(Bucket=bucket_name, Key=key)
+            s3.delete_object(Bucket=S3_ADMIN_BUCKET, Key=key)
             print(f" Deleted from S3: {key}")
         except Exception as e:
             print(f" Failed to delete {key} from S3: {e}")
