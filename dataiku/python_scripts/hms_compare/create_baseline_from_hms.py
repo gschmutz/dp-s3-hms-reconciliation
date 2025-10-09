@@ -183,17 +183,17 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
                 create_time_table_join = f"LEFT JOIN {catalog_name}public.\"PARTITIONS\" ct ON ct.\"PART_ID\" = t.\"PART_ID\""
                 create_time_col = f', ct."CREATE_TIME" AS create_time'
                 create_time_col_agg = f', COALESCE(MAX(create_time), 0) AS max_create_time'
-            if "TBL_ID".lower() in all_columns:
+            elif "TBL_ID".lower() in all_columns:
                 create_time_table_join = f"LEFT JOIN {catalog_name}public.\"TBLS\" ct ON ct.\"TBL_ID\" = t.\"TBL_ID\""
                 create_time_col = f', ct."CREATE_TIME" AS create_time'
                 create_time_col_agg = f', COALESCE(MAX(create_time), 0) AS max_create_time'
             # DBS only has a create_time column in HMS 4.x
-            #if "DB_ID".lower() in all_columns:
+            #elif "DB_ID".lower() in all_columns:
             #    create_time_table_join = f"LEFT JOIN {catalog_name}public.\"DBS\" ct ON ct.\"DB_ID\" = t.\"DB_ID\""
             #    create_time_col = f', ct."CREATE_TIME" AS create_time'
             #    create_time_col_alias = f', MAX(create_time) AS max_create_time'
             # CTLGS only has a create_time column in HMS 4.x
-            #if "CTLGS_ID".lower() in all_columns:
+            #elif "CTLGS_ID".lower() in all_columns:
             #    create_time_table_join = f"LEFT JOIN {catalog_name}public.\"CTLGS\" ct ON ct.\"CTLGS_ID\" = t.\"CTLGS_ID\""
             #    create_time_col = f', ct."CREATE_TIME" AS create_time'
             #    create_time_col_alias = f', MAX(create_time) AS max_create_time'
@@ -216,7 +216,10 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
                     ORDER BY {order_by_clause}
                 ) AS subquery  
             """)
-            #print (query)
+
+            if (table == 'partitions'):
+               print (query)
+
             logger.debug(f"Executing SQL: {query}")
         
             result = conn.execute(query)

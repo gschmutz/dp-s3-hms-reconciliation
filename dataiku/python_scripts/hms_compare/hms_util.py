@@ -17,11 +17,12 @@ def get_table_names(engine, catalog_name):
     with engine.connect() as conn:
         result = conn.execute(text(f"""
             SELECT table_name 
-            FROM {catalog_name}information_schema.tables 
+            FROM {catalog_name}information_schema.tables  t
             WHERE table_schema = 'public' 
             AND table_type = 'BASE TABLE'
-            AND table_name NOT IN ('COMPACTION_METRICS_CACHE', 'WRITE_SET', 'TXN_TO_WRITE_ID', 'NEXT_WRITE_ID', 
-                                    'MIN_HISTORY_WRITE_ID', 'TXN_COMPONENTS', 'COMPLETED_TXN_COMPONENTS', 
-                                    'TXN_LOCK_TBL', 'NEXT_LOCK_ID', 'NEXT_COMPACTION_QUEUE_ID')
+            AND table_name IN (SELECT table_name
+                                FROM {catalog_name}information_schema.columns c 
+                                WHERE UPPER(c.column_name) IN ('PART_ID', 'TBL_ID', 'DB_ID', 'CTLG_ID')
+                             )                        
         """))
         return [row[0] for row in result]
