@@ -29,6 +29,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 from sqlalchemy import create_engine, select, text, Column, Integer, String, DateTime, inspect
+from hms_util import get_table_names
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from util import get_param, get_credential, get_zone_name, replace_vars_in_string
 
@@ -40,7 +41,6 @@ ZONE = get_zone_name(upper=True)
 
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 ENV = get_param('ENV', 'UAT', upper=True)
-FILTER_TABLES = get_param('FILTER_TABLES', "")
 FILTER_TIMESTAMP = get_param('FILTER_TIMESTAMP', None)  # timestamp in seconds since epoch, e.g. 1693440000 for 2023-08-31 00:00:00 UTC
 
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
@@ -71,6 +71,7 @@ HMS_BASELINE_OBJECT_NAME = get_param('HMS_BASELINE_OBJECT_NAME', 'baseline_hms.c
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
     # Construct connection URLs
     hms_db_url = f'postgresql://{HMS_DB_USER}:{HMS_DB_PASSWORD}@{HMS_DB_HOST}:{HMS_DB_PORT}/{HMS_DB_DBNAME}'
+    catalog_name = ""
     
     src_engine = create_engine(hms_db_url)
 else:
@@ -78,6 +79,7 @@ else:
     if HMS_TRINO_USE_SSL:
         hms_trino_url = f'{hms_trino_url}?protocol=https&verify=false'
     
+    catalog_name = f"{HMS_TRINO_CATALOG}."    
     src_engine = create_engine(hms_trino_url)
 
 # Create S3 client configuration
@@ -91,51 +93,13 @@ if AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY:
 
 s3 = boto3.client(**s3_config)
 
-def get_table_names(filter_tables=None):
-    """
-    Retrieves a list of table names from the source database's public schema, optionally filtering by a comma-separated list of table names.
-    Args:
-        filter_tables (str, optional): A comma-separated string of table names to filter the results. If None, all base tables are returned.
-    Returns:
-        list: A list of table names (str) matching the criteria from the source database.
-    Raises:
-        Any exceptions raised by the underlying database connection or query execution.
-    Notes:
-        - The function adapts the query for PostgreSQL or other SQL engines (e.g., Trino) based on the source engine's dialect.
-        - Only tables of type 'BASE TABLE' in the 'public' schema are considered.
-    """
-    if src_engine.dialect.name == 'postgresql':
-        catalog_name = ""
-    else:
-        catalog_name = f"{HMS_TRINO_CATALOG}."
-
-    if filter_tables:
-        filter_tables_str = ",".join([f"'{tbl.strip()}'" for tbl in filter_tables.split(",")])
-        filter_where_clause = f"AND table_name IN ({filter_tables_str})"
-    else:
-        filter_where_clause = ""
-
-    with src_engine.connect() as conn:
-        result = conn.execute(text(f"""
-            SELECT table_name 
-            FROM {catalog_name}information_schema.tables 
-            WHERE table_schema = 'public' 
-            AND table_type = 'BASE TABLE'
-            {filter_where_clause}
-        """))
-        return [row[0] for row in result]
-
 def quote_ident(name: str, dialect):
     return dialect.identifier_preparer.quote(name)
 
-def get_columns(engine, table: str, schema: str = "public"):
-    if src_engine.dialect.name == 'postgresql':
-        catalog_name = ""
-    else:
-        catalog_name = f"{HMS_TRINO_CATALOG}."
-
+def get_columns(engine, catalog_name: str, table: str, schema: str = "public"):
     with engine.connect() as conn:
 
+        # we ignore varbinary columns as they cannot be converted to string in Trino and therefore can not be included in the fingerprint
         stmt = text(f"""
             SELECT lower(column_name)  AS column_name
             FROM  {catalog_name}information_schema.columns c 
@@ -173,10 +137,10 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
         catalog_name = f"{HMS_TRINO_CATALOG}."
 
     with src_engine.connect() as conn:
+
+        print (conn.dialect.name)
         # Step 1: Get primary key columns
-        inspector = inspect(conn)
-        #pk_columns = inspector.get_pk_constraint(table, schema=catalog_name + "." + schema)['constrained_columns']
-        all_columns = get_columns(engine, table, schema)
+        all_columns = get_columns(engine=src_engine, catalog_name=catalog_name, table=table, schema=schema)
         #print(all_columns)
         pk_columns = [all_columns[0]]  # assume first column is PK if no PK defined in HMS
         if not pk_columns:
@@ -184,13 +148,13 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
         else:
             # Step 2: Quote identifiers for safety
             full_table = f"{schema}.{quote_ident(table,dialect=conn.dialect)}"
-            order_by_clause = ", ".join("t." + quote_ident(col,dialect=conn.dialect) for col in pk_columns)
 
             print (f"Generating fingerprint for table {full_table} using PK columns: {pk_columns}")
 
             if src_engine.dialect.name == 'postgresql':
                 row_to_text_expr = "row(t.*)::text"
                 hash_expr = "md5(string_agg(md5(row_text), ''))"
+                order_by_clause = ", ".join("t." + quote_ident(col.upper(),dialect=conn.dialect) for col in pk_columns)
             else:
                 format_args = ",".join([f"CAST(t.{quote_ident(col, dialect=conn.dialect)} AS varchar)" for col in all_columns])
                 format_str = ",".join(["%s"] * len(all_columns))
@@ -205,7 +169,8 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
                                     )
                                 )
                             )
-                            """                                           
+                            """
+                order_by_clause = ", ".join("t." + quote_ident(col,dialect=conn.dialect) for col in pk_columns)
 
             create_time_table_join = ""
             create_time_col = ""
@@ -247,7 +212,7 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
                     ORDER BY {order_by_clause}
                 ) AS subquery  
             """)
-            print (query)
+            # print (query)
             logger.debug(f"Executing SQL: {query}")
         
             result = conn.execute(query)
@@ -255,9 +220,6 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
         return row
 
 HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "zone": ZONE.upper(), "env": ENV.upper() } )
-
-# Dynamically get table names from the source DB
-tables = get_table_names()
 
 def create_baseline():
     """
@@ -275,29 +237,24 @@ def create_baseline():
         - Assumes the existence of functions and variables: get_table_names, FILTER_TABLES, src_engine,
           generate_baseline_for_table, S3_UPLOAD_ENABLED, logger, HMS_BASELINE_OBJECT_NAME, S3_ADMIN_BUCKET, s3.
     """
-    tables = get_table_names(FILTER_TABLES)
+    tables = get_table_names(engine=src_engine, catalog_name=catalog_name)
 
     with open(HMS_BASELINE_OBJECT_NAME, "w") as f:
         # Print CSV header
         print("table_name,count,fingerprint,timestamp", file=f)
 
         for table in tables:
-            if (table == 'COMPACTION_METRICS_CACHE' or table == 'WRITE_SET' or table == 'TXN_TO_WRITE_ID' or table == 'NEXT_WRITE_ID' 
-                or table == 'MIN_HISTORY_WRITE_ID' or table == 'TXN_COMPONENTS' or table == 'COMPLETED_TXN_COMPONENTS' or table == 'TXN_LOCK_TBL'
-                or table == 'NEXT_LOCK_ID' or table == 'NEXT_COMPACTION_QUEUE_ID' ):
-                continue
-            else:
-                with src_engine.connect() as conn:
-                    baseline = generate_baseline_for_table(src_engine, table, "public", filter_timestamp=FILTER_TIMESTAMP)
+            with src_engine.connect() as conn:
+                baseline = generate_baseline_for_table(src_engine, table, "public", filter_timestamp=FILTER_TIMESTAMP)
 
-                if baseline is not None:
-                    count = baseline[0]
-                    if baseline[1] is not None:
-                        fingerprint = baseline[1]
-                    else:
-                        fingerprint = ''
-                    timestamp = baseline[2] if len(baseline) > 2 else 0
-                    print(f"{table},{count},{fingerprint},{timestamp}", file=f)
+            if baseline is not None:
+                count = baseline[0]
+                if baseline[1] is not None:
+                    fingerprint = baseline[1]
+                else:
+                    fingerprint = ''
+                timestamp = baseline[2] if len(baseline) > 2 else 0
+                print(f"{table},{count},{fingerprint},{timestamp}", file=f)
                     
 create_baseline()
 
