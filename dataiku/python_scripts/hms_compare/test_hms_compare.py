@@ -166,7 +166,7 @@ def wait_for_files():
                     print(f"Found: {key}")
                     found_files[key] = True
         if not all(found_files.values()):
-            time.sleep(S3_POLLING_INTERVAL)
+            time.sleep(int(S3_POLLING_INTERVAL))
 
 # === DOWNLOAD FILES ===            
 def download_files():
