@@ -34,7 +34,9 @@ FROM minio.flight_db.table_metrics_latency;
 
 ## Analysis
 
-### Before Saturday, September 27, 2025 9:00:00 AM
+### Before Saturday, September 27, 2025 9:00:00 AM 
+
+before upgrade of Trino to 476
 
 ```sql
 select concat ('`' , table_name, '`')  as table_name 
@@ -95,7 +97,9 @@ LIMIT 40;
 |`gat_lu_alerthit`|6|160.45655555555555|4096|0|2.674275925925926|68|
 
 
-### After Monday, September 29, 2025 9:00:00 AM and before  Saturday, October 4, 2025 9:00:37 AM
+### After Monday, September 29, 2025 9:00:00 AM and before  Saturday, October 4, 2025 9:00:37 AM 
+
+after Trino upgrade but before additional parallelization
 
 ```sql
 select concat ('`' , table_name, '`')  as table_name 
@@ -155,6 +159,8 @@ LIMIT 40;
 
 
 ### After Saturday, October 4, 2025 9:00:37 AM
+
+after Trino upgrade and after further parallelization
 
 ```sql
 select concat ('`' , table_name, '`')  as table_name 
