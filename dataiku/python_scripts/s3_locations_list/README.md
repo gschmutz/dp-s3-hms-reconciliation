@@ -9,12 +9,12 @@ Set environment variables
 ```bash
 export DATAIKU_ENV=pz
 
-export FILTER_DATABASE=
+export FILTER_DATABASE=flight_db
 export FILTER_TABLES=
 
 export BATCHING_STRATEGY=balanced_by_partition_size
-export NUMBER_OF_BATCHES=3
-export NUMBER_OF_STAGES=1
+export NUMBER_OF_BATCHES=6
+export NUMBER_OF_STAGES=2
 
 export HMS_DB_ACCESS_STRATEGY=trino
 
@@ -36,7 +36,7 @@ export AWS_ACCESS_KEY_ID=admin
 export AWS_SECRET_ACCESS_KEY=abc123abc123
 export S3_ENDPOINT_URL=http://localhost:9000
 export S3_ADMIN_BUCKET=admin-bucket
-export S3_LOCATION_LIST_OBJECT_NAME={zone}_s3_locations_{schema}.csv
+export S3_LOCATION_LIST_OBJECT_NAME={zone}_s3_locations_{database}.csv
 ```
 
 Run it
