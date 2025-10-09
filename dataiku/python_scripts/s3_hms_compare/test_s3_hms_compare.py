@@ -81,6 +81,8 @@ HMS_TRINO_USE_SSL = get_param('HMS_TRINO_USE_SSL', 'true').lower() in ('true', '
 ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
+S3_ADMIN_BUCKET = replace_vars_in_string(S3_ADMIN_BUCKET, { "zone": ZONE.upper(), "env": ENV.upper() } )
+
 S3_BASELINE_OBJECT_NAME = get_param('S3_BASELINE_OBJECT_NAME', 'baseline_s3.csv')
 S3_BASELINE_OBJECT_NAME = replace_vars_in_string(S3_BASELINE_OBJECT_NAME, { "database": FILTER_DATABASE.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
 
