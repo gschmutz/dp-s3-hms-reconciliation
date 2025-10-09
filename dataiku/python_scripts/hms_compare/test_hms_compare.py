@@ -299,7 +299,7 @@ def test_compare_table_count(table: str):
 @pytest.mark.parametrize("table", tables)
 def test_compare_table_fingerprint(table: str):
     print(f"Comparing table fingerprints: {table}")
-    count_baseline = get_fingerprint(table, BASELINE)
-    count_recovered = get_fingerprint(table, RECOVERED)
-    assert count_baseline == count_recovered, f"Count mismatch for table {table}: baseline={count_baseline}, recovered={count_recovered}"
+    fingerprint_baseline = get_fingerprint(table, BASELINE)
+    fingerprint_recovered = get_fingerprint(table, RECOVERED)
+    assert fingerprint_baseline == fingerprint_recovered, f"Fingerprint mismatch for table {table}: baseline={fingerprint_baseline}, recovered={fingerprint_recovered}"
 
