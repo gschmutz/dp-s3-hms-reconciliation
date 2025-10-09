@@ -178,15 +178,15 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
 
             create_time_table_join = ""
             create_time_col = ""
-            create_time_col_alias = ""
+            create_time_col_agg = ""
             if "PART_ID".lower() in all_columns:
                 create_time_table_join = f"LEFT JOIN {catalog_name}public.\"PARTITIONS\" ct ON ct.\"PART_ID\" = t.\"PART_ID\""
                 create_time_col = f', ct."CREATE_TIME" AS create_time'
-                create_time_col_alias = f', MAX(create_time) AS max_create_time'
+                create_time_col_agg = f', COALESCE(MAX(create_time), 0) AS max_create_time'
             if "TBL_ID".lower() in all_columns:
                 create_time_table_join = f"LEFT JOIN {catalog_name}public.\"TBLS\" ct ON ct.\"TBL_ID\" = t.\"TBL_ID\""
                 create_time_col = f', ct."CREATE_TIME" AS create_time'
-                create_time_col_alias = f', MAX(create_time) AS max_create_time'
+                create_time_col_agg = f', COALESCE(MAX(create_time), 0) AS max_create_time'
             # DBS only has a create_time column in HMS 4.x
             #if "DB_ID".lower() in all_columns:
             #    create_time_table_join = f"LEFT JOIN {catalog_name}public.\"DBS\" ct ON ct.\"DB_ID\" = t.\"DB_ID\""
@@ -206,7 +206,7 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
             query = text(f"""
                 SELECT COUNT(*) AS row_count
                 , {hash_expr} AS fingerprint
-                {create_time_col_alias}
+                {create_time_col_agg}
                 FROM (
                     SELECT {row_to_text_expr} AS row_text
                     {create_time_col}
@@ -216,7 +216,7 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
                     ORDER BY {order_by_clause}
                 ) AS subquery  
             """)
-            # print (query)
+            #print (query)
             logger.debug(f"Executing SQL: {query}")
         
             result = conn.execute(query)
