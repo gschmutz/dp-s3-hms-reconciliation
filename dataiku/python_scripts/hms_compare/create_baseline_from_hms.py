@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 ZONE = get_zone_name(upper=False)
 
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
-ENV = get_param('ENV', 'UAT', upper=True)
+ENV = get_param('ENV', 'UAT', upper=False)
 FILTER_TIMESTAMP = get_param('FILTER_TIMESTAMP', None)  # timestamp in seconds since epoch, e.g. 1693440000 for 2023-08-31 00:00:00 UTC
 
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
