@@ -42,8 +42,8 @@ HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
 
 HMS_DB_USER = get_credential('HMS_DB_USER', 'hive')
 HMS_DB_PASSWORD = get_credential('HMS_DB_PASSWORD', 'abc123!')
-HMS_DB_HOST = get_param('HMS_DB_HOST', 'hive-metastore-db')
-HMS_DB_PORT = get_param('HMS_DB_PORT', '5432')
+HMS_DB_HOST = get_param('HMS_DB_HOST', '172.26.183.2')
+HMS_DB_PORT = get_param('HMS_DB_PORT', '5442')
 HMS_DB_DBNAME = get_param('HMS_DB_NAME', 'metastore_db')
 
 HMS_TRINO_USER = get_credential('HMS_TRINO_USER', 'trino')

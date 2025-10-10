@@ -61,6 +61,7 @@ ZONE = get_zone_name(upper=False)
 
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 ENV = get_param('ENV', 'UAT', upper=False)
+RUN_AS_CRONJOB= get_param('RUN_AS_CRONJOB', 'false').lower() in ['true', 'yes']
 
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
 
@@ -81,12 +82,15 @@ HMS_TRINO_USE_SSL = get_param('HMS_TRINO_USE_SSL', 'true').lower() in ('true', '
 # Read endpoint URL from environment variable, default to localhost MinIO
 S3_ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', 'admin')
-AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', 'admin123')
+AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', 'abc123abc123')
 
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
 S3_POLLING_INTERVAL = get_param('S3_POLLING_INTERVAL', '60')
+
+HMS_CREATE_BASELINE_FLAG = get_param('HMS_CREATE_BASELINE_FLAG', 'hms_db_backup_flag.csv')
 HMS_BASELINE_OBJECT_NAME = get_param('HMS_BASELINE_OBJECT_NAME', 'baseline_hms.csv')
 HMS_RECOVERED_OBJECT_NAME = get_param('HMS_RECOVERED_OBJECT_NAME', 'recovered_hms.csv')
+
 
 HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "zone": ZONE, "env": ENV } )
 HMS_RECOVERED_OBJECT_NAME = replace_vars_in_string(HMS_RECOVERED_OBJECT_NAME, { "zone": ZONE, "env": ENV } )
@@ -124,6 +128,38 @@ local_files = [f'/tmp/baseline.csv', f'/tmp/recovered.csv']
 
 BASELINE = 'baseline'
 RECOVERED = 'recovered'
+
+
+def download_and_parse_csv_flag(object_name: str):
+    """
+    Gets as input the local file path and parse it in order to set the timestamp that filters
+    the HMS DB in order to create the baseline file accordingly.
+     
+    Args:
+        object_name (str): The name of the flag object in S3.      
+        
+        - Read the CSV file
+        - Get the first value of the 'backup_time' column
+        - Set the global FILTER_TIMESTAMP variable to this value
+    """
+
+    s3.download_file(S3_ADMIN_BUCKET, HMS_CREATE_BASELINE_FLAG, f'/tmp/create_hms_db_baseline_flag.csv')   
+
+    try:
+        df = pd.read_csv(f'/tmp/create_hms_db_baseline_flag.csv')
+         
+        backup_name = df['backup_file_name'].iloc[0]
+        HMS_BASELINE_OBJECT_NAME = f"{object_name.removesuffix('.csv')}_for_{backup_name.removesuffix('.tar.gz')}.csv" 
+        print( f"Setting HMS DB baseline name to: '{HMS_BASELINE_OBJECT_NAME}'")
+
+        return HMS_BASELINE_OBJECT_NAME
+
+    except FileNotFoundError:
+        sys.exit(f"Error: File '{filepath}' not found.")
+    except pd.errors.EmptyDataError:
+        sys.exit("Error: File is empty.")
+    except pd.errors.ParserError:
+        sys.exit("Error: File could not be parsed as CSV.")
 
 def file_exists(key):
     """
@@ -224,13 +260,13 @@ def cleanup():
 
     print("\n Cleaning up...")
 
-    # Delete from S3
-    for key in file_keys:
-        try:
-            s3.delete_object(Bucket=S3_ADMIN_BUCKET, Key=key)
-            print(f" Deleted from S3: {key}")
-        except Exception as e:
-            print(f" Failed to delete {key} from S3: {e}")
+    # Delete from S3 - To reconsider if needed
+#    for key in file_keys:
+#        try:
+#            s3.delete_object(Bucket=S3_ADMIN_BUCKET, Key=key)
+#            print(f" Deleted from S3: {key}")
+#        except Exception as e:
+#            print(f" Failed to delete {key} from S3: {e}")
 
     # Delete local files
     for path in local_files:
@@ -278,6 +314,9 @@ def get_fingerprint(table: str, type: str) -> str:
     if len(fingerprint) == 0 or pd.isna(fingerprint[0]):
         return ""
     return fingerprint[0]
+
+if RUN_AS_CRONJOB:
+   HMS_BASELINE_OBJECT_NAME = download_and_parse_csv_flag(HMS_BASELINE_OBJECT_NAME)
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_before_all():
