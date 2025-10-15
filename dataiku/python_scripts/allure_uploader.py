@@ -31,7 +31,7 @@ def upload_to_s3(s3_client, local_directory, bucket, s3_prefix=""):
             s3_client.upload_file(local_path, bucket, s3_path)
     
 def upload_to_allure_server(
-    allure_results_directory,
+    local_directory,
     allure_server,
     project_id,
     security_user,
@@ -43,7 +43,7 @@ def upload_to_allure_server(
     execution_type='teamcity'
 ):
     current_directory = os.path.dirname(os.path.realpath(__file__))
-    results_directory = os.path.join(current_directory, allure_results_directory)
+    results_directory = os.path.join(current_directory, local_directory)
     print('RESULTS DIRECTORY PATH: ' + results_directory)
 
     print("------------------LOGIN-----------------")
@@ -146,7 +146,7 @@ def upload_to_allure_server(
     return json_response_body['data']['report_url']
 
 def send_allure_results(
-    allure_results_directory,
+    report_directory,
     allure_server,
     project_id,
     run_id,
@@ -162,7 +162,7 @@ def send_allure_results(
     execution_from='http://google.com',
     execution_type='teamcity'
 ):
-    allure_results_directory = allure_results_directory or "allure-results"
+    allure_results_directory = os.path.join(report_directory, "allure-results").replace("\\", "/")
 
     upload_to_allure_server(
         allure_results_directory,
@@ -180,4 +180,4 @@ def send_allure_results(
     if upload_to_s3_enabled and upload_to_s3_bucket:
         print("------------------UPLOAD-TO-S3------------------")
 
-        upload_to_s3(upload_to_s3_client, allure_results_directory, upload_to_s3_bucket, s3_prefix=upload_to_s3_prefix)
+        upload_to_s3(upload_to_s3_client, report_directory, upload_to_s3_bucket, s3_prefix=upload_to_s3_prefix)
