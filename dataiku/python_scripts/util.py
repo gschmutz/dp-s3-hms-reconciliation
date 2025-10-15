@@ -134,7 +134,7 @@ def replace_vars_in_string(s, variables):
     # Replace {var} with value from variables dict
     return re.sub(r"\{(\w+)\}", lambda m: str(variables.get(m.group(1), m.group(0))), s)        
 
-def create_s3_client(aws_access_key, aws_secret_key, endpoint_url, verify_ssl=False) -> boto3.client:
+def create_s3_client(aws_access_key, aws_secret_key, endpoint_url=None, verify_ssl=False) -> boto3.client:
     # Create S3 client configuration
     s3_config = {"service_name": "s3"}
 
