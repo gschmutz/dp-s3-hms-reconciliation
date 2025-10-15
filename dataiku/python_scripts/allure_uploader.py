@@ -152,6 +152,7 @@ def send_allure_results(
     upload_to_s3_enabled=False,
     upload_to_s3_client=None,
     upload_to_s3_bucket="",
+    upload_to_s3_prefix="",
     execution_name='execution from my script',
     execution_from='http://google.com',
     execution_type='teamcity'
@@ -174,5 +175,4 @@ def send_allure_results(
     if upload_to_s3_enabled and upload_to_s3_bucket:
         print("------------------UPLOAD-TO-S3------------------")
 
-        s3_prefix = project_id + "/" + run_id if run_id else project_id + "/" + str(uuid.uuid4())
-        upload_to_s3(upload_to_s3_client, allure_results_directory, upload_to_s3_bucket, s3_prefix=s3_prefix)
+        upload_to_s3(upload_to_s3_client, allure_results_directory, upload_to_s3_bucket, s3_prefix=upload_to_s3_prefix)
