@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import boto3
+import kubernetes 
 import hashlib
 import pandas as pd
 import io
@@ -135,7 +136,18 @@ def replace_vars_in_string(s, variables):
     return re.sub(r"\{(\w+)\}", lambda m: str(variables.get(m.group(1), m.group(0))), s)        
 
 def create_s3_client(aws_access_key, aws_secret_key, endpoint_url=None, verify_ssl=False) -> boto3.client:
-    # Create S3 client configuration
+    """
+    Creates and returns a boto3 S3 client with the specified AWS credentials and configuration.
+
+    Args:
+        aws_access_key (str): AWS access key ID.
+        aws_secret_key (str): AWS secret access key.
+        endpoint_url (str, optional): Custom S3 endpoint URL (e.g., for S3-compatible storage). Defaults to None.
+        verify_ssl (bool, optional): Whether to verify SSL certificates. Set to False to disable verification (useful for self-signed certificates). Defaults to False.
+
+    Returns:
+        boto3.client: A boto3 S3 client instance configured with the provided parameters.
+    """
     s3_config = {"service_name": "s3"}
 
     if aws_access_key and aws_secret_key:
@@ -148,6 +160,29 @@ def create_s3_client(aws_access_key, aws_secret_key, endpoint_url=None, verify_s
     s3 = boto3.client(**s3_config)
 
     return s3
+
+def create_k8s_client(host, auth_token, verify_ssl=False, ssl_ca_cert=None) -> kubernetes.client.Configuration:
+    """
+    Creates and configures a Kubernetes client with the specified host and authentication token.
+    Args:
+        host (str): The URL of the Kubernetes API server.
+        auth_token (str): Bearer token for authentication.
+        verify_ssl (bool, optional): Whether to verify the server's SSL certificate. Defaults to False.
+        ssl_ca_cert (str, optional): Path to a custom CA certificate file. Defaults to None.
+    Returns:
+        kubernetes.client.Configuration: The configured Kubernetes client.
+    Raises:
+        None
+    """
+    config = kubernetes.client.Configuration()
+    config.host = host
+    config.api_key = {"authorization": f"Bearer  {auth_token}" }
+    config.verify_ssl = verify_ssl
+    if ssl_ca_cert:
+        config.ssl_ca_cert = ssl_ca_cert
+
+    client.Configuration.set_default(config)
+    return client
 
 def get_s3_location_list(s3: boto3.client, s3_admin_bucket: str, s3_location_list_object_name: str, batch: str, stage: str) -> pd.DataFrame:
     """
