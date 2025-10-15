@@ -22,7 +22,7 @@ def get_table_names(engine, catalog_name):
             AND table_type = 'BASE TABLE'
             AND table_name IN (SELECT table_name
                                 FROM {catalog_name}information_schema.columns c 
-                                WHERE UPPER(c.column_name) IN ('PART_ID', 'TBL_ID', 'DB_ID', 'CTLG_ID')
+                                WHERE UPPER(c.column_name) IN ('PART_ID', 'TBL_ID', 'DB_ID', 'CTLGS_ID')
                              )                        
         """))
         return [row[0] for row in result]

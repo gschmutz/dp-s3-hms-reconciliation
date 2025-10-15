@@ -2,8 +2,27 @@ import os
 import requests
 import json
 import base64
+import boto3
+import uuid
 
-def send_allure_results(
+def upload_to_s3(s3_client, local_directory, bucket, s3_prefix=""):
+    """
+    Recursively upload a local directory to an S3 bucket.
+
+    :param local_directory: Path to the local directory
+    :param bucket: Target S3 bucket name
+    :param s3_prefix: Optional prefix (S3 folder path) to upload into
+    """
+    for root, dirs, files in os.walk(local_directory):
+        for filename in files:
+            local_path = os.path.join(root, filename)
+            relative_path = os.path.relpath(local_path, local_directory)
+            s3_path = os.path.join(s3_prefix, relative_path).replace("\\", "/")
+
+            print(f"Uploading {local_path} → s3://{bucket}/{s3_path}")
+            s3_client.upload_file(local_path, bucket, s3_path)
+    
+def upload_to_allure_server(
     allure_results_directory,
     allure_server,
     project_id,
@@ -117,3 +136,40 @@ def send_allure_results(
     print('ALLURE REPORT URL:')
     print(json_response_body['data']['report_url'])
     return json_response_body['data']['report_url']
+
+def send_allure_results(
+    allure_results_directory,
+    allure_server,
+    project_id,
+    run_id,
+    security_user,
+    security_password,
+    create_project=False,
+    ssl_verification=True,
+    upload_to_s3=False,
+    upload_to_s3_client=None,
+    upload_to_s3_bucket="",
+    execution_name='execution from my script',
+    execution_from='http://google.com',
+    execution_type='teamcity'
+):
+    allure_results_directory = allure_results_directory or "allure-results"
+
+    upload_to_allure_server(
+        allure_results_directory,
+        allure_server,
+        project_id,
+        security_user,
+        security_password,
+        create_project,
+        ssl_verification,
+        execution_name,
+        execution_from,
+        execution_type
+    )
+
+    if upload_to_s3 and upload_to_s3_bucket:
+        print("------------------UPLOAD-TO-S3------------------")
+
+        s3_prefix = project_id + "/" + run_id if run_id else project_id + "/" + str(uuid.uuid4())
+        upload_to_s3(upload_to_s3_client, allure_results_directory, upload_to_s3_bucket, s3_prefix=s3_prefix)
