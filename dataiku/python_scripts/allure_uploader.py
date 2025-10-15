@@ -13,7 +13,10 @@ def upload_to_s3(s3_client, local_directory, bucket, s3_prefix=""):
     :param bucket: Target S3 bucket name
     :param s3_prefix: Optional prefix (S3 folder path) to upload into
     """
-    for root, dirs, files in os.walk(local_directory):
+    current_directory = os.path.dirname(os.path.realpath(__file__))
+    absolute_directory = os.path.join(current_directory, local_directory)
+    
+    for root, dirs, files in os.walk(absolute_directory):
         for filename in files:
             local_path = os.path.join(root, filename)
             relative_path = os.path.relpath(local_path, local_directory)
