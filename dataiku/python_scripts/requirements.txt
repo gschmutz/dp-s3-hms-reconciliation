@@ -13,4 +13,3 @@ thriftpy2
 thrift
 thrift_sasl
 kubernetes
-pyarrow
