@@ -20,7 +20,7 @@ def upload_to_s3(s3_client, local_directory, bucket, s3_prefix=""):
         for filename in files:
             local_path = os.path.join(root, filename)
             #relative_path = os.path.relpath(local_path, local_directory)
-            s3_path = os.path.join(s3_prefix, filename).replace("\\", "/")
+            s3_path = os.path.join(s3_prefix, os.path.basename(filename)).replace("\\", "/")
 
             print(f"Uploading {local_path} → s3://{bucket}/{s3_path}")
             s3_client.upload_file(local_path, bucket, s3_path)
