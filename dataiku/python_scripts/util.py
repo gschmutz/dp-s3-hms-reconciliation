@@ -134,6 +134,21 @@ def replace_vars_in_string(s, variables):
     # Replace {var} with value from variables dict
     return re.sub(r"\{(\w+)\}", lambda m: str(variables.get(m.group(1), m.group(0))), s)        
 
+def create_s3_client(aws_access_key, aws_secret_key, endpoint_url, verify_ssl=False) -> boto3.client:
+    # Create S3 client configuration
+    s3_config = {"service_name": "s3"}
+
+    if aws_access_key and aws_secret_key:
+        s3_config["aws_access_key_id"] = aws_access_key
+        s3_config["aws_secret_access_key"] = aws_secret_key
+    if endpoint_url:
+        s3_config["endpoint_url"] = endpoint_url
+        s3_config["verify"] = verify_ssl  # Disable SSL verification for self-signed certificates
+
+    s3 = boto3.client(**s3_config)
+
+    return s3
+
 def get_s3_location_list(s3: boto3.client, s3_admin_bucket: str, s3_location_list_object_name: str, batch: str, stage: str) -> pd.DataFrame:
     """
     Retrieves a list of S3 locations from a CSV file stored in an S3 bucket and returns it as a pandas DataFrame.
