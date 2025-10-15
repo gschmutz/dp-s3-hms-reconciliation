@@ -100,6 +100,21 @@ def get_zone_name(upper=False) -> str:
     else:
         return return_value
 
+def get_run_id() -> str:
+    """
+    Retrieves the run ID from the Dataiku scenario if available, otherwise generates a new UUID.
+    Returns:
+        str: The run ID.
+    """
+    return_value = None
+    if scenario is not None:
+        return_value = scenario.get_run_id()
+    if not return_value:
+        import uuid
+        return_value = str(uuid.uuid4())
+    logger.info(f"Run ID: {return_value}")
+    return return_value
+
 def replace_vars_in_string(s, variables):
     print(f"Replacing variables in string: {s} with {variables}")
     # Replace {var} with value from variables dict
