@@ -108,7 +108,7 @@ def get_run_id() -> str:
     """
     return_value = None
     if scenario is not None:
-        return_value = scenario.get_run_id()
+        return_value = scenario.get_all_variables().get("scenarioTriggerRunId")
     if not return_value:
         import uuid
         return_value = str(uuid.uuid4())
