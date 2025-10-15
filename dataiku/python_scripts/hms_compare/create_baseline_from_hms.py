@@ -24,6 +24,8 @@ import os
 import sys
 import hashlib
 import logging
+import time
+import pandas as pd
 from datetime import datetime
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -43,6 +45,7 @@ ZONE = get_zone_name(upper=False)
 # Environment variables for setting the filter to apply when reading the baseline counts from Kafka. If not set (left to default) then all the tables will consumed and compared against actual counts.
 ENV = get_param('ENV', 'UAT', upper=False)
 FILTER_TIMESTAMP = get_param('FILTER_TIMESTAMP', None)  # timestamp in seconds since epoch, e.g. 1693440000 for 2023-08-31 00:00:00 UTC
+RUN_AS_CRONJOB= get_param('RUN_AS_CRONJOB', 'false').lower() in ['true', 'yes']
 
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
 
@@ -64,13 +67,19 @@ HMS_TRINO_USE_SSL = get_param('HMS_TRINO_USE_SSL', 'true').lower() in ('true', '
 S3_UPLOAD_ENABLED = get_param('S3_UPLOAD_ENABLED', 'true').lower() in ['true', '1', 'yes']  
 S3_ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', 'admin')
-AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', 'admin123')
+AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', 'abc123abc123')
 
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
+S3_POLLING_INTERVAL = get_param('S3_POLLING_INTERVAL', '60')
+
+HMS_CREATE_BASELINE_FLAG = get_param('HMS_CREATE_BASELINE_FLAG', 'hms_db_backup_flag.csv')
 HMS_BASELINE_OBJECT_NAME = get_param('HMS_BASELINE_OBJECT_NAME', 'baseline_hms.csv')
 HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "zone": ZONE, "env": ENV } )
 
 HMS_BASELINE_FILE_NAME = HMS_BASELINE_OBJECT_NAME.replace('/', '__')
+
+file_keys = [HMS_CREATE_BASELINE_FLAG]
+local_files = [f'/tmp/create_baseline_flag.csv']
 
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
     # Construct connection URLs
@@ -96,6 +105,107 @@ if AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY:
     s3_config["aws_secret_access_key"] = AWS_SECRET_ACCESS_KEY   
 
 s3 = boto3.client(**s3_config)
+
+def file_exists(key):
+    """
+    Checks if a file with the specified key exists in the S3 bucket.
+    Args:
+        key (str): The key (path/filename) of the file to check in the S3 bucket.
+    Returns:
+        bool: True if the file exists in the S3 bucket, False if it does not.
+    Raises:
+        Error: If an error other than a missing file (404) occurs during the check.
+    """
+
+    try:
+        s3.head_object(Bucket=S3_ADMIN_BUCKET, Key=key)
+        return True
+    except s3.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == "404":
+            return False
+        else:
+            raise Error(" Generic Error in checking files")
+
+
+def wait_for_files():
+    """
+    Waits for a set of files to appear by periodically checking their existence.
+    This function monitors the presence of files specified in the global `file_keys` list.
+    It repeatedly checks if each file exists using the `file_exists` function. If a file is found,
+    it marks it as found and prints a message. The function continues polling at intervals defined
+    by the global `poll_interval` variable until all files are found.
+    Returns:
+        None
+    """
+
+    print("Waiting for baseline startup flag to appear...")
+
+    found_files = {key: False for key in file_keys}
+
+    while not all(found_files.values()):
+        for key in file_keys:
+            if not found_files[key]:
+                if file_exists(key):
+                    print(f"Found: {key}")
+                    found_files[key] = True
+        if not all(found_files.values()):
+            time.sleep(int(S3_POLLING_INTERVAL))
+
+          
+def download_files():
+    """
+    Downloads files from an S3 bucket to local file paths.
+
+    Iterates over pairs of S3 object keys and corresponding local file paths,
+    downloading each file from the specified S3 bucket to the local destination.
+
+    Assumes the existence of the following variables in the enclosing scope:
+        - file_keys: List of S3 object keys to download.
+        - local_files: List of local file paths to save the downloaded files.
+        - bucket_name: Name of the S3 bucket.
+        - s3: Boto3 S3 client or compatible object with a download_file method.
+    """
+    for key, local_path in zip(file_keys, local_files):
+        print(f"Downloading {key} to {local_path}")
+        s3.download_file(S3_ADMIN_BUCKET, key, local_path)            
+
+def parse_csv_flag(filepath: str, object_name: str):
+    """
+    Gets as input the local file path and parse it in order to set the timestamp that filters
+    the HMS DB in order to create the baseline file accordingly.
+     
+    filepath: get as input the csv file path from local_paths[0]
+
+        - Read the CSV file
+        - Get the first value of the 'backup_time' column
+        - Set the global FILTER_TIMESTAMP variable to this value
+        - Get the first value of the 'backup_file_name' column
+        - Set the global HMS_BASELINE_OBJECT_NAME variable to this value
+    Returns:
+        FILTER_TIMESTAMP (int): The timestamp value from the CSV file.
+        HMS_BASELINE_OBJECT_NAME (str): The baseline object name derived from the CSV file.
+    """
+
+    try:
+        df = pd.read_csv(filepath)
+         
+        FILTER_TIMESTAMP = df['backup_time'].iloc[0]
+        print( f"Setting HMS DB filtering timestamp to: '{FILTER_TIMESTAMP}'")
+
+        backup_name = df['backup_file_name'].iloc[0]
+        HMS_BASELINE_OBJECT_NAME = f"{object_name.removesuffix('.csv')}_for_{backup_name.removesuffix('.tar.gz')}.csv" 
+        print( f"Setting HMS DB baseline name to: '{HMS_BASELINE_OBJECT_NAME}'")
+
+        return FILTER_TIMESTAMP,HMS_BASELINE_OBJECT_NAME
+
+    except FileNotFoundError:
+        sys.exit(f"Error: File '{filepath}' not found.")
+    except pd.errors.EmptyDataError:
+        sys.exit("Error: File is empty.")
+    except pd.errors.ParserError:
+        sys.exit("Error: File could not be parsed as CSV.")
+    
+
 
 def quote_ident(name: str, dialect):
     return dialect.identifier_preparer.quote(name)
@@ -260,7 +370,13 @@ def create_baseline():
                     fingerprint = ''
                 timestamp = baseline[2] if len(baseline) > 2 else 0
                 print(f"{table},{count},{fingerprint},{timestamp}", file=f)
-                    
+
+if RUN_AS_CRONJOB:
+    wait_for_files()
+    download_files()
+    FILTER_TIMESTAMP,HMS_BASELINE_OBJECT_NAME = parse_csv_flag(local_files[0],HMS_BASELINE_OBJECT_NAME)
+
+
 create_baseline()
 
 # upload the file to S3 to make it available
