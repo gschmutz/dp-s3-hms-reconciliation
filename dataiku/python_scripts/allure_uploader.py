@@ -146,7 +146,7 @@ def send_allure_results(
     security_password,
     create_project=False,
     ssl_verification=True,
-    upload_to_s3=False,
+    upload_to_s3_enabled=False,
     upload_to_s3_client=None,
     upload_to_s3_bucket="",
     execution_name='execution from my script',
@@ -168,7 +168,7 @@ def send_allure_results(
         execution_type
     )
 
-    if upload_to_s3 and upload_to_s3_bucket:
+    if upload_to_s3_enabled and upload_to_s3_bucket:
         print("------------------UPLOAD-TO-S3------------------")
 
         s3_prefix = project_id + "/" + run_id if run_id else project_id + "/" + str(uuid.uuid4())
