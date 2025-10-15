@@ -164,7 +164,7 @@ def send_allure_results(
 ):
     allure_results_directory = os.path.join(report_directory, "allure-results").replace("\\", "/")
 
-    upload_to_allure_server(
+    report_url = upload_to_allure_server(
         allure_results_directory,
         allure_server,
         project_id,
@@ -181,3 +181,5 @@ def send_allure_results(
         print("------------------UPLOAD-TO-S3------------------")
 
         upload_to_s3(upload_to_s3_client, report_directory, upload_to_s3_bucket, s3_prefix=upload_to_s3_prefix)
+
+    return report_url    
