@@ -115,6 +115,20 @@ def get_run_id() -> str:
     logger.info(f"Run ID: {return_value}")
     return return_value
 
+def get_run_url() -> str:
+    """
+    Retrieves the run URL from the Dataiku scenario if available, otherwise returns an empty string.
+    Returns:
+        str: The run URL.
+    """
+    return_value = None
+    if scenario is not None:
+        return_value = scenario.get_all_variables().get("scenarioRunURL")
+    if not return_value:
+        return_value = ""
+    logger.info(f"Run URL: {return_value}")
+    return return_value
+
 def replace_vars_in_string(s, variables):
     print(f"Replacing variables in string: {s} with {variables}")
     # Replace {var} with value from variables dict
