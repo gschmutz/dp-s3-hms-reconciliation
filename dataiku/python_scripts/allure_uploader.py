@@ -4,6 +4,7 @@ import json
 import base64
 import boto3
 import uuid
+from util import get_param, get_credential, get_zone_name, get_run_url, get_run_id, create_s3_client
 
 def upload_to_s3(s3_client, local_directory, bucket, s3_prefix=""):
     """
@@ -145,7 +146,7 @@ def upload_to_allure_server(
     print(json_response_body['data']['report_url'])
     return json_response_body['data']['report_url']
 
-def send_allure_results(
+def send_reports(
     report_directory,
     allure_server,
     project_id,
@@ -183,3 +184,44 @@ def send_allure_results(
         upload_to_s3(upload_to_s3_client, report_directory, upload_to_s3_bucket, s3_prefix=upload_to_s3_prefix)
 
     return report_url    
+
+def upload_reports(project_basename):
+
+    # Environment variables
+    ALLURE_SERVER = os.getenv('ALLURE_REPORT_SERVER_URL', '')
+    ALLURE_USER = os.getenv('ALLURE_REPORT_USER', 'admin')
+    ALLURE_PASSWORD = os.getenv('ALLURE_REPORT_PASSWORD', 'admin')
+    ALLURE_CREATE_PROJECT_ENABLED = os.getenv('ALLURE_CREATE_PROJECT', 'false').lower() in ('true', '1', 't')
+    ALLURE_SSL_VERIFICATION = os.getenv('ALLURE_SSL_VERIFICATION', 'false').lower() in ('true', '1', 't')
+    UPLOAD_TO_S3_ENABLED = os.getenv('ALLURE_UPLOAD_TO_S3_ENABLED', 'false').lower() in ('true', '1', 't')
+    UPLOAD_TO_S3_BUCKET = os.getenv('S3_ADMIN_BUCKET', '')
+    AWS_ACCESS_KEY_ID = os.get_credential('AWS_ACCESS_KEY_ID', '')
+    AWS_SECRET_ACCESS_KEY = os.get_credential('AWS_SECRET_ACCESS_KEY', '')
+
+    zone = get_zone_name()
+    run_id = get_run_id()
+    run_url = get_run_url()
+    project_id = f"{zone.lower()}-{project_basename}"
+    report_directory = f"../../../../pytest-step-execute-tests/project-python-libs/GDP_RECONCILIAITON_JOBS/report"
+
+    allure_results_directory = os.path.join(report_directory, "allure-results").replace("\\", "/")
+
+    report_url = upload_to_allure_server(
+        allure_results_directory,
+        ALLURE_SERVER,
+        project_id,
+        ALLURE_USER,
+        ALLURE_PASSWORD,
+        ALLURE_CREATE_PROJECT_ENABLED,
+        ALLURE_SSL_VERIFICATION, 
+        execution_from=run_url
+    )
+
+    if UPLOAD_TO_S3_ENABLED and UPLOAD_TO_S3_BUCKET:
+        print("------------------UPLOAD-TO-S3------------------")
+
+        s3_client = create_s3_client(aws_access_key=AWS_ACCESS_KEY_ID, aws_secret_key=AWS_SECRET_ACCESS_KEY, endpoint_url=S3_ENDPOINT_URL)
+        s3_prefix = f"test/{zone.lower()}/report/{project_id}/{run_id}"
+        upload_to_s3(s3_client, report_directory, UPLOAD_TO_S3_BUCKET, s3_prefix=s3_prefix)
+
+    return report_url 
