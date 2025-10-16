@@ -189,7 +189,7 @@ def upload_reports(project_basename):
 
     # Environment variables
     ALLURE_SERVER = get_param('ALLURE_REPORT_SERVER_URL', '')
-    ALLURE_USER = get_param('ALLURE_REPORT_USER', 'admin')
+    ALLURE_USER = get_credential('ALLURE_REPORT_USER', 'admin')
     ALLURE_PASSWORD = get_credential('ALLURE_REPORT_PASSWORD', 'admin')
     ALLURE_CREATE_PROJECT_ENABLED = get_param('ALLURE_CREATE_PROJECT', 'false').lower() in ('true', '1', 't')
     ALLURE_SSL_VERIFICATION = get_param('ALLURE_SSL_VERIFICATION', 'false').lower() in ('true', '1', 't')
