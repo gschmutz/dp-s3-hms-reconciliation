@@ -188,15 +188,15 @@ def send_reports(
 def upload_reports(project_basename):
 
     # Environment variables
-    ALLURE_SERVER = os.getenv('ALLURE_REPORT_SERVER_URL', '')
-    ALLURE_USER = os.getenv('ALLURE_REPORT_USER', 'admin')
-    ALLURE_PASSWORD = os.getenv('ALLURE_REPORT_PASSWORD', 'admin')
-    ALLURE_CREATE_PROJECT_ENABLED = os.getenv('ALLURE_CREATE_PROJECT', 'false').lower() in ('true', '1', 't')
-    ALLURE_SSL_VERIFICATION = os.getenv('ALLURE_SSL_VERIFICATION', 'false').lower() in ('true', '1', 't')
-    UPLOAD_TO_S3_ENABLED = os.getenv('ALLURE_UPLOAD_TO_S3_ENABLED', 'false').lower() in ('true', '1', 't')
-    UPLOAD_TO_S3_BUCKET = os.getenv('S3_ADMIN_BUCKET', '')
-    AWS_ACCESS_KEY_ID = os.get_credential('AWS_ACCESS_KEY_ID', '')
-    AWS_SECRET_ACCESS_KEY = os.get_credential('AWS_SECRET_ACCESS_KEY', '')
+    ALLURE_SERVER = get_param('ALLURE_REPORT_SERVER_URL', '')
+    ALLURE_USER = get_param('ALLURE_REPORT_USER', 'admin')
+    ALLURE_PASSWORD = get_credential('ALLURE_REPORT_PASSWORD', 'admin')
+    ALLURE_CREATE_PROJECT_ENABLED = get_param('ALLURE_CREATE_PROJECT', 'false').lower() in ('true', '1', 't')
+    ALLURE_SSL_VERIFICATION = get_param('ALLURE_SSL_VERIFICATION', 'false').lower() in ('true', '1', 't')
+    UPLOAD_TO_S3_ENABLED = get_param('ALLURE_UPLOAD_TO_S3_ENABLED', 'false').lower() in ('true', '1', 't')
+    UPLOAD_TO_S3_BUCKET = get_param('S3_ADMIN_BUCKET', '')
+    AWS_ACCESS_KEY_ID = get_credential('AWS_ACCESS_KEY_ID', '')
+    AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', '')
 
     zone = get_zone_name()
     run_id = get_run_id()
