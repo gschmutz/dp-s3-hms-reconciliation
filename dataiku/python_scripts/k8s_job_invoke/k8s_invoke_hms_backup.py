@@ -1,11 +1,8 @@
 from kubernetes import client, config
 import datetime
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
+from util import create_k8s_client
 
-# Load config
-try:
-    config.load_incluster_config()
-except:
-    config.load_kube_config()
 
 batch_v1 = client.BatchV1Api()
 
