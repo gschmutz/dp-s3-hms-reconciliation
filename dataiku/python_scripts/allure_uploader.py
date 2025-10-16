@@ -56,6 +56,7 @@ def upload_to_allure_server(
     headers = {'Content-type': 'application/json'}
 
     print (f"credentials_body: {json_credentials_body}")
+    print (f"ssl_verification: {ssl_verification}")
 
     session = requests.Session()
     response = session.post(
