@@ -55,9 +55,6 @@ def upload_to_allure_server(
     json_credentials_body = json.dumps(credentials_body)
     headers = {'Content-type': 'application/json'}
 
-    print (f"credentials_body: {json_credentials_body}")
-    print (f"ssl_verification: {ssl_verification}")
-
     session = requests.Session()
     response = session.post(
         f"{allure_server}/allure-docker-service/login",
@@ -205,7 +202,7 @@ def upload_reports(project_basename):
     run_id = get_run_id()
     run_url = get_run_url()
     project_id = f"{zone.lower()}-{project_basename}"
-    report_directory = f"../../../../pytest-step-execute-tests/project-python-libs/GDP_RECONCILIAITON_JOBS/report"
+    report_directory = f"../../../../pytest-step-execute-tests/project-python-libs/GDP_RECONCILIATION_JOBS/report"
 
     allure_results_directory = os.path.join(report_directory, "allure-results").replace("\\", "/")
 
