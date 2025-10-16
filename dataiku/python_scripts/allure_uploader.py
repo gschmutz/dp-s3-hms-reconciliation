@@ -194,6 +194,7 @@ def upload_reports(project_basename):
     ALLURE_CREATE_PROJECT_ENABLED = get_param('ALLURE_CREATE_PROJECT_ENABLED', 'false').lower() in ('true', '1', 't')
     ALLURE_SSL_VERIFICATION = get_param('ALLURE_SSL_VERIFICATION', 'false').lower() in ('true', '1', 't')
     UPLOAD_TO_S3_ENABLED = get_param('ALLURE_UPLOAD_TO_S3_ENABLED', 'false').lower() in ('true', '1', 't')
+    UPLOAD_S3_ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
     UPLOAD_TO_S3_BUCKET = get_param('S3_ADMIN_BUCKET', '')
     AWS_ACCESS_KEY_ID = get_credential('AWS_ACCESS_KEY_ID', '')
     AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', '')
@@ -220,7 +221,7 @@ def upload_reports(project_basename):
     if UPLOAD_TO_S3_ENABLED and UPLOAD_TO_S3_BUCKET:
         print("------------------UPLOAD-TO-S3------------------")
 
-        s3_client = create_s3_client(aws_access_key=AWS_ACCESS_KEY_ID, aws_secret_key=AWS_SECRET_ACCESS_KEY, endpoint_url=S3_ENDPOINT_URL)
+        s3_client = create_s3_client(aws_access_key=AWS_ACCESS_KEY_ID, aws_secret_key=AWS_SECRET_ACCESS_KEY, endpoint_url=UPLOAD_S3_ENDPOINT_URL)
         s3_prefix = f"test/{zone.lower()}/report/{project_id}/{run_id}"
         upload_to_s3(s3_client, report_directory, UPLOAD_TO_S3_BUCKET, s3_prefix=s3_prefix)
 
