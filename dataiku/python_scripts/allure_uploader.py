@@ -166,16 +166,16 @@ def send_reports(
     allure_results_directory = os.path.join(report_directory, "allure-results").replace("\\", "/")
 
     report_url = upload_to_allure_server(
-        allure_results_directory,
-        allure_server,
-        project_id,
-        security_user,
-        security_password,
-        create_project,
-        ssl_verification,
-        execution_name,
-        execution_from,
-        execution_type
+        local_directory=allure_results_directory,
+        allure_server=allure_server,
+        project_id=project_id,
+        security_user=security_user,
+        security_password=security_password,
+        create_project=create_project,
+        ssl_verification=ssl_verification,
+        execution_name=execution_name,
+        execution_from=execution_from,
+        execution_type=execution_type
     )
 
     if upload_to_s3_enabled and upload_to_s3_bucket:
@@ -191,7 +191,7 @@ def upload_reports(project_basename):
     ALLURE_SERVER = get_param('ALLURE_REPORT_SERVER_URL', '')
     ALLURE_USER = get_credential('ALLURE_REPORT_USER', 'admin')
     ALLURE_PASSWORD = get_credential('ALLURE_REPORT_PASSWORD', 'admin')
-    ALLURE_CREATE_PROJECT_ENABLED = get_param('ALLURE_CREATE_PROJECT', 'false').lower() in ('true', '1', 't')
+    ALLURE_CREATE_PROJECT_ENABLED = get_param('ALLURE_CREATE_PROJECT_ENABLED', 'false').lower() in ('true', '1', 't')
     ALLURE_SSL_VERIFICATION = get_param('ALLURE_SSL_VERIFICATION', 'false').lower() in ('true', '1', 't')
     UPLOAD_TO_S3_ENABLED = get_param('ALLURE_UPLOAD_TO_S3_ENABLED', 'false').lower() in ('true', '1', 't')
     UPLOAD_TO_S3_BUCKET = get_param('S3_ADMIN_BUCKET', '')
@@ -206,14 +206,22 @@ def upload_reports(project_basename):
 
     allure_results_directory = os.path.join(report_directory, "allure-results").replace("\\", "/")
 
+    print(f"Allure Server: {ALLURE_SERVER}")
+    print(f"Allure User: {ALLURE_USER}")
+    print(f"Allure Password: {ALLURE_PASSWORD}")
+    print(f"Allure Create Project Enabled: {ALLURE_CREATE_PROJECT_ENABLED}")
+    print(f"Allure SSL Verification: {ALLURE_SSL_VERIFICATION}")
+    print(f"Upload to S3 Enabled: {UPLOAD_TO_S3_ENABLED}")
+    print(f"Upload to S3 Bucket: {UPLOAD_TO_S3_BUCKET}")
+
     report_url = upload_to_allure_server(
-        allure_results_directory,
-        ALLURE_SERVER,
-        project_id,
-        ALLURE_USER,
-        ALLURE_PASSWORD,
-        ALLURE_CREATE_PROJECT_ENABLED,
-        ALLURE_SSL_VERIFICATION, 
+        local_directory=allure_results_directory,
+        allure_server=ALLURE_SERVER,
+        project_id=project_id,
+        security_user=ALLURE_USER,
+        security_password=ALLURE_PASSWORD,
+        create_project=ALLURE_CREATE_PROJECT_ENABLED,
+        ssl_verification=ALLURE_SSL_VERIFICATION,
         execution_from=run_url
     )
 
