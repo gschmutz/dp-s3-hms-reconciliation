@@ -6,16 +6,15 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from util import get_param, get_credential, get_zone_name, get_s3_location_list, replace_vars_in_string
 
 # === Configuration ===
-K8S_HOST = get_param('K8S_HOST', 'lcoalhost:8443')
-NAMESPACE = get_param('NAMESPACE', 'dpr-uat-infrapz')
+K8S_HOST = get_param('K8S_HOST', 'none')
+NAMESPACE = get_param('NAMESPACE', 'none')
 SERVICE_NAME = get_param('SERVICE_NAME', 'postgresql-hl-test')
 SERVICE_PORT = get_param('SERVICE_PORT', '5442')
 STS_NAME = get_param('STS_NAME', 'postgresql-test')
 CRONJOB_NAME = get_param('CRONJOB_NAME', 'postgres-recovery-v2')
 PSQL_IMAGE = get_param('PSQL_IMAGE','postgresql:16.6.0-debian-12-r2')
 API_TOKEN = get_credential('K8S_API_TOKEN', '')
-TIMESTAMP = get_param('TIMESTAMP','1')
-
+TIMESTAMP = get_param('FILTER_TIMESTAMP','1')
 
 # === Configure Kubernetes client ===
 config = client.Configuration()
@@ -118,7 +117,7 @@ readiness_probe = client.V1Probe(
 # === PostgreSQL Container ===
 postgres_container = client.V1Container(
     name="postgresql",
-    image=PSQL_IMAGE,
+    image=f'pks-ch-harbor.juliusbaer.com/dpr/{PSQL_IMAGE}',
     image_pull_policy="Always",
     env=env_vars,
     ports=[client.V1ContainerPort(container_port=int(SERVICE_PORT), name="tcp-postgresql", protocol="TCP")],
@@ -250,6 +249,7 @@ cronjob = batch_v1.read_namespaced_cron_job(name=CRONJOB_NAME, namespace=NAMESPA
 container = cronjob.spec.job_template.spec.template.spec.containers[0]
 
 # === Add environment variables ===
+
 new_env_vars = [
     client.V1EnvVar(name="EPOCH_TIMESTAMP", value=TIMESTAMP),
     client.V1EnvVar(name="PG_TARGET_HOST", value=SERVICE_NAME),
@@ -271,8 +271,3 @@ batch_v1.create_namespaced_job(namespace=NAMESPACE, body=job_spec)
 wait_for_job_completion(job_name=job_name, namespace=NAMESPACE)
 
 print("------------------------------------------------------------------------------------------------------------------------------------------------------------")
-
-# === Cleanup ===
-#core_v1.delete_namespaced_service(name=SERVICE_NAME, namespace=NAMESPACE)
-#apps_v1.delete_namespaced_stateful_set(name=STS_NAME, namespace=NAMESPACE)
-                     

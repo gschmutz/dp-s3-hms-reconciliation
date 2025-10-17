@@ -259,14 +259,14 @@ def cleanup():
     """
 
     print("\n Cleaning up...")
-
+    file_keys = [HMS_RECOVERED_OBJECT_NAME]
     # Delete from S3 - To reconsider if needed
-#    for key in file_keys:
-#        try:
-#            s3.delete_object(Bucket=S3_ADMIN_BUCKET, Key=key)
-#            print(f" Deleted from S3: {key}")
-#        except Exception as e:
-#            print(f" Failed to delete {key} from S3: {e}")
+    for key in file_keys:
+        try:
+            s3.delete_object(Bucket=S3_ADMIN_BUCKET, Key=key)
+            print(f" Deleted from S3: {key}")
+        except Exception as e:
+            print(f" Failed to delete {key} from S3: {e}")
 
     # Delete local files
     for path in local_files:

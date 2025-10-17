@@ -35,6 +35,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 from hms_util import get_table_names
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from util import get_param, get_credential, get_zone_name, replace_vars_in_string
+from dataiku.scenario import Scenario
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -70,9 +71,10 @@ AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', 'admin')
 AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', 'abc123abc123')
 
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
-S3_POLLING_INTERVAL = get_param('S3_POLLING_INTERVAL', '60')
+S3_POLLING_INTERVAL = get_param('S3_POLLING_INTERVAL', '10')
 
 HMS_CREATE_BASELINE_FLAG = get_param('HMS_CREATE_BASELINE_FLAG', 'hms_db_backup_flag.csv')
+HMS_CREATE_BASELINE_FLAG = replace_vars_in_string(HMS_CREATE_BASELINE_FLAG, { "zone": ZONE, "env": ENV } )
 HMS_BASELINE_OBJECT_NAME = get_param('HMS_BASELINE_OBJECT_NAME', 'baseline_hms.csv')
 HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "zone": ZONE, "env": ENV } )
 
@@ -116,7 +118,6 @@ def file_exists(key):
     Raises:
         Error: If an error other than a missing file (404) occurs during the check.
     """
-
     try:
         s3.head_object(Bucket=S3_ADMIN_BUCKET, Key=key)
         return True
@@ -138,7 +139,7 @@ def wait_for_files():
         None
     """
 
-    print("Waiting for baseline startup flag to appear...")
+    print(f"Waiting for baseline startup flag to appear in {HMS_CREATE_BASELINE_FLAG}...")
 
     found_files = {key: False for key in file_keys}
 
@@ -204,7 +205,39 @@ def parse_csv_flag(filepath: str, object_name: str):
         sys.exit("Error: File is empty.")
     except pd.errors.ParserError:
         sys.exit("Error: File could not be parsed as CSV.")
-    
+
+        
+def cleanup():
+    """
+    Cleans up resources by deleting specified files from both S3 and the local filesystem.
+    This function iterates over a list of S3 object keys and attempts to delete each object from the specified S3 bucket.
+    It also iterates over a list of local file paths and attempts to remove each file from the local filesystem.
+    Any errors encountered during deletion are caught and printed.
+    Assumes the existence of the following variables in the global scope:
+        - file_keys: List of S3 object keys to delete.
+        - bucket_name: Name of the S3 bucket.
+        - s3: Boto3 S3 client instance.
+        - local_files: List of local file paths to delete.
+        - os: The os module for file operations.
+    """
+
+    print("\n Cleaning up...")
+
+
+    for key in file_keys:
+        try:
+            s3.delete_object(Bucket=S3_ADMIN_BUCKET, Key=key)
+            print(f" Deleted from S3: {key}")
+        except Exception as e:
+            print(f" Failed to delete {key} from S3: {e}")
+
+    # Delete local files
+    for path in local_files:
+        try:
+            os.remove(path)
+            print(f" Deleted local file: {path}")
+        except Exception as e:
+            print(f" Failed to delete local file {path}: {e}")
 
 
 def quote_ident(name: str, dialect):
@@ -375,7 +408,15 @@ if RUN_AS_CRONJOB:
     wait_for_files()
     download_files()
     FILTER_TIMESTAMP,HMS_BASELINE_OBJECT_NAME = parse_csv_flag(local_files[0],HMS_BASELINE_OBJECT_NAME)
-
+    
+    vars_for_next_step = {
+       "FILTER_TIMESTAMP": f'{FILTER_TIMESTAMP}',
+       "HMS_BASELINE_OBJECT_NAME": f'{HMS_BASELINE_OBJECT_NAME}'
+    }
+    
+    scenario = Scenario()
+    scenario.set_scenario_variables(**vars_for_next_step)
+    
 
 create_baseline()
 
@@ -384,3 +425,7 @@ if S3_UPLOAD_ENABLED:
     logger.info(f"Uploading {HMS_BASELINE_FILE_NAME} to s3://{S3_ADMIN_BUCKET}/{HMS_BASELINE_OBJECT_NAME}")
 
     s3.upload_file(HMS_BASELINE_FILE_NAME, S3_ADMIN_BUCKET, HMS_BASELINE_OBJECT_NAME)
+
+if RUN_AS_CRONJOB:
+    #cleans up the flag to avoid loop
+    cleanup()
