@@ -248,14 +248,19 @@ wait_for_pod_ready(label_selector=label_selector, namespace=NAMESPACE)
 cronjob = batch_v1.read_namespaced_cron_job(name=CRONJOB_NAME, namespace=NAMESPACE)
 container = cronjob.spec.job_template.spec.template.spec.containers[0]
 
-# === Add environment variables ===
+# === Environment variable names to update ===
+env_var_names_to_update = {"EPOCH_TIMESTAMP", "PG_TARGET_HOST", "PG_TARGET_PORT"}
 
+# === Remove existing env vars with those names ===
+container.env = [env for env in (container.env or []) if env.name not in env_var_names_to_update]
+
+# === Add environment variables ===
 new_env_vars = [
     client.V1EnvVar(name="EPOCH_TIMESTAMP", value=TIMESTAMP),
     client.V1EnvVar(name="PG_TARGET_HOST", value=SERVICE_NAME),
     client.V1EnvVar(name="PG_TARGET_PORT", value=SERVICE_PORT)
 ]
-container.env = (container.env or []) + new_env_vars
+container.env += new_env_vars
 
 # === Patch CronJob ===
 batch_v1.patch_namespaced_cron_job(name=CRONJOB_NAME, namespace=NAMESPACE, body=cronjob)
