@@ -106,8 +106,8 @@ s3 = boto3.client('s3')
 
 # Create S3 client configuration
 s3_config = {"service_name": "s3"}
-AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', None)
-AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', None)
+AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', f'admin')
+AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', f'abc123abc123')
 
 if AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY:
     s3_config["aws_access_key_id"] = AWS_ACCESS_KEY
