@@ -30,7 +30,34 @@ def upload_to_s3(s3_client, local_directory, bucket, s3_prefix=""):
             print(f"Uploading {local_path} → s3://{bucket}/{s3_path}")
             
             s3_client.upload_file(local_path, bucket, s3_path)
-    
+
+def download_from_s3(s3_client, bucket, s3_prefix, local_directory):
+    """
+    Recursively download a directory from an S3 bucket to a local directory.
+
+    :param bucket: Source S3 bucket name
+    :param s3_prefix: S3 folder path to download
+    :param local_directory: Path to the local directory
+    """
+    current_directory = os.path.dirname(os.path.realpath(__file__))
+    absolute_directory = os.path.join(current_directory, local_directory)
+
+    print(f"Downloading contents of s3://{bucket}/{s3_prefix} to {absolute_directory}")
+
+    paginator = s3_client.get_paginator('list_objects_v2')
+    for page in paginator.paginate(Bucket=bucket, Prefix=s3_prefix):
+        for obj in page.get('Contents', []):
+            s3_path = obj['Key']
+            relative_path = os.path.relpath(s3_path, s3_prefix)
+            local_path = os.path.join(absolute_directory, relative_path)
+            local_dir = os.path.dirname(local_path)
+            if not os.path.exists(local_dir):
+                os.makedirs(local_dir)
+            
+            print(f"Downloading s3://{bucket}/{s3_path} → {local_path}")
+            
+            s3_client.download_file(bucket, s3_path, local_path)
+
 def upload_to_allure_server(
     local_directory,
     allure_server,
@@ -185,7 +212,7 @@ def send_reports(
 
     return report_url    
 
-def upload_reports(project_basename):
+def upload_reports(project_basename, report_directory = None):
 
     # Environment variables
     ALLURE_SERVER = get_param('ALLURE_REPORT_SERVER_URL', '')
@@ -203,7 +230,10 @@ def upload_reports(project_basename):
     run_id = get_run_id()
     run_url = get_run_url()
     project_id = f"{zone.lower()}-{project_basename}"
-    report_directory = f"../../../../pytest-step-execute-tests/project-python-libs/GDP_RECONCILIATION_JOBS/report"
+
+
+    if report_directory is None:
+        report_directory = f"../../../../pytest-step-execute-tests/project-python-libs/GDP_RECONCILIATION_JOBS/report"
 
     allure_results_directory = os.path.join(report_directory, "allure-results").replace("\\", "/")
 
