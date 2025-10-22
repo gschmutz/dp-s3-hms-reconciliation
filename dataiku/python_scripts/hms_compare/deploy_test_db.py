@@ -6,15 +6,15 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from util import get_param, get_credential, get_zone_name, get_s3_location_list, replace_vars_in_string
 
 # === Configuration ===
-K8S_HOST = get_param('K8S_HOST', 'https://api.k8szrh00197.cna.juliusbaer.com:8443')
-NAMESPACE = get_param('NAMESPACE', 'dpr-uat-infrap')
+K8S_HOST = get_param('K8S_HOST', 'none')
+NAMESPACE = get_param('NAMESPACE', 'none')
 SERVICE_NAME = get_param('SERVICE_NAME', 'postgresql-hl-test')
 SERVICE_PORT = get_param('SERVICE_PORT', '5442')
 STS_NAME = get_param('STS_NAME', 'postgresql-test')
-CRONJOB_NAME = get_param('CRONJOB_NAME', 'ostgres-recovery-v2')
-PSQL_IMAGE = get_param('PSQL_IMAGE','pks-ch-harbor.juliusbaer.com/dpr/postgresql:16.6.0-debian-12-r2')
+CRONJOB_NAME = get_param('CRONJOB_NAME', 'postgres-recovery-v2')
+PSQL_IMAGE = get_param('PSQL_IMAGE','postgresql:16.6.0-debian-12-r2')
 API_TOKEN = get_credential('K8S_API_TOKEN', '')
-TIMESTAMP = get_param('TIMESTAMP','1760543021')
+TIMESTAMP = get_param('FILTER_TIMESTAMP','1')
 
 # === Configure Kubernetes client ===
 config = client.Configuration()
@@ -41,7 +41,7 @@ service_manifest = client.V1Service(
         ports=[
             client.V1ServicePort(
                 name="tcp-postgresql",
-                port=SERVICE_PORT,
+                port=int(SERVICE_PORT),
                 protocol="TCP",
                 target_port="tcp-postgresql"
             )
@@ -60,7 +60,7 @@ service_manifest = client.V1Service(
 # === Environment Variables ===
 env_vars = [
     client.V1EnvVar(name="BITNAMI_DEBUG", value="false"),
-    client.V1EnvVar(name="POSTGRESQL_PORT_NUMBER", value="5432"),
+    client.V1EnvVar(name="POSTGRESQL_PORT_NUMBER", value=SERVICE_PORT),
     client.V1EnvVar(name="POSTGRESQL_VOLUME_DIR", value="/bitnami/postgresql"),
     client.V1EnvVar(name="PGDATA", value="/bitnami/postgresql/data"),
     client.V1EnvVar(
@@ -99,7 +99,7 @@ resources = client.V1ResourceRequirements(
 
 # === Liveness and Readiness Probes ===
 liveness_probe = client.V1Probe(
-    _exec=client.V1ExecAction(command=["/bin/sh", "-c", 'exec pg_isready -U "postgres" -h 127.0.0.1 -p 5432']),
+    _exec=client.V1ExecAction(command=["/bin/sh", "-c", f'exec pg_isready -U "postgres" -h 127.0.0.1 -p {SERVICE_PORT}']),
     initial_delay_seconds=30,
     period_seconds=10,
     failure_threshold=6,
@@ -107,7 +107,7 @@ liveness_probe = client.V1Probe(
 )
 
 readiness_probe = client.V1Probe(
-    _exec=client.V1ExecAction(command=["/bin/sh", "-c", 'exec pg_isready -U "postgres" -h 127.0.0.1 -p 5432']),
+    _exec=client.V1ExecAction(command=["/bin/sh", "-c", f'exec pg_isready -U "postgres" -h 127.0.0.1 -p {SERVICE_PORT}']),
     initial_delay_seconds=5,
     period_seconds=10,
     failure_threshold=6,
@@ -117,10 +117,10 @@ readiness_probe = client.V1Probe(
 # === PostgreSQL Container ===
 postgres_container = client.V1Container(
     name="postgresql",
-    image=PSQL_IMAGE,
+    image=f'pks-ch-harbor.juliusbaer.com/dpr/{PSQL_IMAGE}',
     image_pull_policy="Always",
     env=env_vars,
-    ports=[client.V1ContainerPort(container_port=5432, name="tcp-postgresql", protocol="TCP")],
+    ports=[client.V1ContainerPort(container_port=int(SERVICE_PORT), name="tcp-postgresql", protocol="TCP")],
     liveness_probe=liveness_probe,
     readiness_probe=readiness_probe,
     resources=resources,
@@ -218,7 +218,7 @@ def wait_for_job_completion(job_name, namespace, timeout=1200, interval=5):
     start_time = time.time()
 
     while time.time() - start_time < timeout:
-        job = batch_v1.read_namespaced_job(name=job_name, namespace=namespace)
+        job = batch_v1.read_namespaced_job(name=job_name, namespace=NAMESPACE)
         status = job.status
 
         if status.succeeded:
@@ -233,12 +233,14 @@ def wait_for_job_completion(job_name, namespace, timeout=1200, interval=5):
 
     raise TimeoutError(f"Job '{job_name}' did not complete within {timeout} seconds.")
 
+    
+print("-----------------------------------------------------EXECUTION------------------------------------------------------------------------------------------------")
 # === Deploy Resources ===
 core_v1.create_namespaced_service(namespace=NAMESPACE, body=service_manifest)
 apps_v1.create_namespaced_stateful_set(namespace=NAMESPACE, body=statefulset)
 
 # === Wait for the StatefulSet to be ready ===
-label_selector = "app.kubernetes.io/component=primary,app.kubernetes.io/instance=dpr-infra,app.kubernetes.io/name={STS_NAME}"
+label_selector = f"app.kubernetes.io/component=primary,app.kubernetes.io/instance=dpr-infra,app.kubernetes.io/name={STS_NAME}"
 wait_for_pod_ready(label_selector=label_selector, namespace=NAMESPACE)
 
 
@@ -246,19 +248,25 @@ wait_for_pod_ready(label_selector=label_selector, namespace=NAMESPACE)
 cronjob = batch_v1.read_namespaced_cron_job(name=CRONJOB_NAME, namespace=NAMESPACE)
 container = cronjob.spec.job_template.spec.template.spec.containers[0]
 
+# === Environment variable names to update ===
+env_var_names_to_update = {"EPOCH_TIMESTAMP", "PG_TARGET_HOST", "PG_TARGET_PORT"}
+
+# === Remove existing env vars with those names ===
+container.env = [env for env in (container.env or []) if env.name not in env_var_names_to_update]
+
 # === Add environment variables ===
 new_env_vars = [
     client.V1EnvVar(name="EPOCH_TIMESTAMP", value=TIMESTAMP),
     client.V1EnvVar(name="PG_TARGET_HOST", value=SERVICE_NAME),
     client.V1EnvVar(name="PG_TARGET_PORT", value=SERVICE_PORT)
 ]
-container.env = (container.env or []) + new_env_vars
+container.env += new_env_vars
 
 # === Patch CronJob ===
 batch_v1.patch_namespaced_cron_job(name=CRONJOB_NAME, namespace=NAMESPACE, body=cronjob)
 
 # === Manually trigger the job ===
-job_name = f"{CRONJOB_NAME}-manual-{int(time.time())}"
+job_name = f"{CRONJOB_NAME}-test-{int(time.time())}"
 job_spec = client.V1Job(
     metadata = client.V1ObjectMeta(name=job_name),
     spec = cronjob.spec.job_template.spec
@@ -267,9 +275,4 @@ job_spec = client.V1Job(
 batch_v1.create_namespaced_job(namespace=NAMESPACE, body=job_spec)
 wait_for_job_completion(job_name=job_name, namespace=NAMESPACE)
 
-
-
-#core_v1.delete_namespaced_service(name=SERVICE_NAME, namespace=NAMESPACE)
-#apps_v1.delete_namespaced_stateful_set(name=STS_NAME, namespace=NAMESPACE)
-#batch_v1.delete_namespaced_job(body=job_spec, namespace=NAMESPACE)
-                     
+print("------------------------------------------------------------------------------------------------------------------------------------------------------------")
