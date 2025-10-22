@@ -288,3 +288,39 @@ def upload_reports(project_basename, report_directory = None):
         upload_to_s3(s3_client, report_directory, UPLOAD_TO_S3_BUCKET, s3_prefix=s3_prefix)
 
     return report_url 
+
+def export_emailable_report(project_basename):
+
+    ALLURE_SERVER = get_param('ALLURE_REPORT_SERVER_URL', '')
+    ALLURE_USER = get_credential('ALLURE_REPORT_USER', 'admin')
+    ALLURE_PASSWORD = get_credential('ALLURE_REPORT_PASSWORD', 'admin')
+    ALLURE_SSL_VERIFICATION = get_param('ALLURE_SSL_VERIFICATION', 'false').lower() in ('true', '1', 't')
+
+    zone = get_zone_name()
+
+    csrf_access_token, access_token_cookie = allure_login(ALLURE_SERVER, ALLURE_USER, ALLURE_PASSWORD, ALLURE_SSL_VERIFICATION)
+
+    project_id = f"{zone.lower()}-{project_basename}"
+    url = f"{ALLURE_SERVER}/allure-docker-service/emailable-report/export?project_id={project_id}"
+    headers = { 
+        'accept': '*/*',
+        'X-CRSF-TOKEN': csrf_access_token
+    }
+    cookies = {
+        'access_token_cookie': access_token_cookie
+    }
+    
+    print("------------------GET ALLURE EMAILABLE REPORT------------------")
+    session = requests.Session()
+    response = session.get(
+        url,
+        headers=headers,
+        cookies=cookies,
+        verify=ALLURE_SSL_VERIFICATION
+    )
+    print("STATUS CODE:")
+    print(response.status_code)
+    folder=dataiku.Folder("zadpu87O")
+    filename='allure-report.html'
+    with folder.get_writer(filename) as writer:
+        writer.write(response.text.encode("utf-8"))
