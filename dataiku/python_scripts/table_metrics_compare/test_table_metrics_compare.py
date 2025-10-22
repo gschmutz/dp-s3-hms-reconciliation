@@ -42,7 +42,7 @@ import logging
 import boto3
 import pandas as pd
 
-from sqlalchemy import create_engine,text
+from sqlalchemy import create_engine,text,inspect
 from confluent_kafka import Consumer, KafkaError, TopicPartition, OFFSET_BEGINNING
 from confluent_kafka.deserializing_consumer import DeserializingConsumer
 from confluent_kafka.serialization import SerializationContext, MessageField, StringDeserializer, Deserializer
@@ -50,6 +50,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from util import get_param, get_credential, get_zone_name, get_s3_location_list, replace_vars_in_string
 
 from typing import Optional
+
  
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -87,6 +88,8 @@ KAFKA_TOPIC_NAME = get_param('KAFKA_TOPIC_NAME', 'dpraw_execution_status_log_v1'
 # Connect to MinIO or AWS S3
 ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
+S3_ADMIN_BUCKET = replace_vars_in_string(S3_ADMIN_BUCKET, { "zone": ZONE.upper(), "env": ENV.upper() } )
+
 S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
 S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "database": FILTER_SCHEMA.upper(), "schema": FILTER_SCHEMA.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
 
@@ -155,6 +158,33 @@ logger = logging.getLogger(__name__)
 
 def get_baseline(table):
     return latest_values[table]
+
+def is_column_name_part_of_table(column_name: str, table: str) -> bool:
+    """
+    Check if a given column name exists in the specified table using SQLAlchemy's inspector.
+ 
+    Args:
+        column_name (str): The name of the column to check.
+        table (str): The name of the table to inspect (as catalog.schema.table_name).
+ 
+    Returns:
+        bool: True if the column exists in the table, False otherwise.
+    """
+    with trino_engine.connect() as conn:
+        inspector = inspect(conn)
+        # Split table into catalog, schema, and table_name
+        parts = table.split('.')
+        if len(parts) == 3:
+            catalog, schema, table_name = parts
+        elif len(parts) == 2:
+            schema, table_name = parts
+            catalog = None
+        else:
+            table_name = parts[0]
+            schema = None
+            catalog = None
+        columns = [col['name'] for col in inspector.get_columns(table_name, schema)]
+        return column_name in columns
  
 def get_actual_count(table: str, timestamp_column: Optional[str] = None, baseline_timestamp: Optional[int] = None) -> int:
     """
@@ -174,6 +204,12 @@ def get_actual_count(table: str, timestamp_column: Optional[str] = None, baselin
         Exception: If there is an error executing the query.
     """
  
+    if not timestamp_column:
+        # Check if the table has the specified column using SQLAlchemy's inspector
+
+        if is_column_name_part_of_table("dp_load_timestamp", table):
+            timestamp_column = "dp_load_timestamp"
+
     with trino_engine.connect() as conn:
  
         if not timestamp_column:
