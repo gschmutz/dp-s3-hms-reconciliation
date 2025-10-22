@@ -131,6 +131,9 @@ def upload_to_allure_server(
         raise Exception("CSRF access token not found in cookies.")
     print("CSRF-ACCESS-TOKEN: " + csrf_access_token)
 
+    # check this for substitute the code above
+    #csrf_access_token, access_token_cookie = allure_login(ALLURE_SERVER, ALLURE_USER, ALLURE_PASSWORD, ALLURE_SSL_VERIFICATION)
+
     if create_project:
         print("------------------CREATE-PROJECT------------------")
         create_project_body = {
