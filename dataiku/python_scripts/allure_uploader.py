@@ -6,6 +6,38 @@ import boto3
 import uuid
 from util import get_param, get_credential, get_zone_name, get_run_url, get_run_id, create_s3_client
 
+def allure_login(allure_server, security_user, security_password, ssl_verification):
+    print("------------------LOGIN-----------------")
+    credentials_body = {
+        "username": security_user,
+        "password": security_password
+    }
+    json_credentials_body = json.dumps(credentials_body)
+    headers = {'Content-type': 'application/json'}
+
+    session = requests.Session()
+    response = session.post(
+        f"{allure_server}/allure-docker-service/login",
+        headers=headers,
+        data=json_credentials_body,
+        verify=ssl_verification
+    )
+
+    print("STATUS CODE:")
+    print(response.status_code)
+    print("RESPONSE COOKIES:")
+    print(json.dumps(session.cookies.get_dict(), indent=4, sort_keys=True))
+    csrf_access_token = session.cookies.get('csrf_access_token')
+    if not csrf_access_token:
+        raise Exception("CSRF access token not found in cookies.")
+    print("CSRF-ACCESS-TOKEN: " + csrf_access_token)
+    access_token_cookie = session.cookies.get('access_token_cookie')
+    if not access_token_cookie:
+        raise Exception("Access cookie token not found in cookies.")
+    print("ACCESS-COOKIE-TOKEN: " + access_token_cookie)
+    
+    return csrf_access_token, access_token_cookie
+
 def upload_to_s3(s3_client, local_directory, bucket, s3_prefix=""):
     """
     Recursively upload a local directory to an S3 bucket.
