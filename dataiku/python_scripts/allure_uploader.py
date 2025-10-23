@@ -5,6 +5,7 @@ import base64
 import boto3
 import uuid
 from util import get_param, get_credential, get_zone_name, get_run_url, get_run_id, create_s3_client
+import dataiku
 
 def allure_login(allure_server, security_user, security_password, ssl_verification):
     print("------------------LOGIN-----------------")
