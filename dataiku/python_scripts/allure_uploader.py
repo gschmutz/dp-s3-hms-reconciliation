@@ -5,6 +5,39 @@ import base64
 import boto3
 import uuid
 from util import get_param, get_credential, get_zone_name, get_run_url, get_run_id, create_s3_client
+import dataiku
+
+def allure_login(allure_server, security_user, security_password, ssl_verification):
+    print("------------------LOGIN-----------------")
+    credentials_body = {
+        "username": security_user,
+        "password": security_password
+    }
+    json_credentials_body = json.dumps(credentials_body)
+    headers = {'Content-type': 'application/json'}
+
+    session = requests.Session()
+    response = session.post(
+        f"{allure_server}/allure-docker-service/login",
+        headers=headers,
+        data=json_credentials_body,
+        verify=ssl_verification
+    )
+
+    print("STATUS CODE:")
+    print(response.status_code)
+    print("RESPONSE COOKIES:")
+    print(json.dumps(session.cookies.get_dict(), indent=4, sort_keys=True))
+    csrf_access_token = session.cookies.get('csrf_access_token')
+    if not csrf_access_token:
+        raise Exception("CSRF access token not found in cookies.")
+    print("CSRF-ACCESS-TOKEN: " + csrf_access_token)
+    access_token_cookie = session.cookies.get('access_token_cookie')
+    if not access_token_cookie:
+        raise Exception("Access cookie token not found in cookies.")
+    print("ACCESS-COOKIE-TOKEN: " + access_token_cookie)
+    
+    return csrf_access_token, access_token_cookie
 
 def upload_to_s3(s3_client, local_directory, bucket, s3_prefix=""):
     """
@@ -98,6 +131,9 @@ def upload_to_allure_server(
     if not csrf_access_token:
         raise Exception("CSRF access token not found in cookies.")
     print("CSRF-ACCESS-TOKEN: " + csrf_access_token)
+
+    # check this for substitute the code above
+    #csrf_access_token, access_token_cookie = allure_login(ALLURE_SERVER, ALLURE_USER, ALLURE_PASSWORD, ALLURE_SSL_VERIFICATION)
 
     if create_project:
         print("------------------CREATE-PROJECT------------------")
@@ -256,3 +292,39 @@ def upload_reports(project_basename, report_directory = None):
         upload_to_s3(s3_client, report_directory, UPLOAD_TO_S3_BUCKET, s3_prefix=s3_prefix)
 
     return report_url 
+
+def export_emailable_report(project_basename):
+
+    ALLURE_SERVER = get_param('ALLURE_REPORT_SERVER_URL', '')
+    ALLURE_USER = get_credential('ALLURE_REPORT_USER', 'admin')
+    ALLURE_PASSWORD = get_credential('ALLURE_REPORT_PASSWORD', 'admin')
+    ALLURE_SSL_VERIFICATION = get_param('ALLURE_SSL_VERIFICATION', 'false').lower() in ('true', '1', 't')
+
+    zone = get_zone_name()
+
+    csrf_access_token, access_token_cookie = allure_login(ALLURE_SERVER, ALLURE_USER, ALLURE_PASSWORD, ALLURE_SSL_VERIFICATION)
+
+    project_id = f"{zone.lower()}-{project_basename}"
+    url = f"{ALLURE_SERVER}/allure-docker-service/emailable-report/export?project_id={project_id}"
+    headers = { 
+        'accept': '*/*',
+        'X-CRSF-TOKEN': csrf_access_token
+    }
+    cookies = {
+        'access_token_cookie': access_token_cookie
+    }
+    
+    print("------------------GET ALLURE EMAILABLE REPORT------------------")
+    session = requests.Session()
+    response = session.get(
+        url,
+        headers=headers,
+        cookies=cookies,
+        verify=ALLURE_SSL_VERIFICATION
+    )
+    print("STATUS CODE:")
+    print(response.status_code)
+    folder=dataiku.Folder("zadpu87O")
+    filename='allure-report.html'
+    with folder.get_writer(filename) as writer:
+        writer.write(response.text.encode("utf-8"))
