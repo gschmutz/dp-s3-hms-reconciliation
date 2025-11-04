@@ -149,7 +149,7 @@ def get_s3_locations_for_tables(filter_database=None, filter_tables=None):
                 COUNT(p."PART_ID") as partition_count
             FROM
                 {catalog_name}public."TBLS" t
-            JOIN public."DBS" d 
+            JOIN {catalog_name}public."DBS" d 
                 ON t."DB_ID" = d."DB_ID"
             JOIN {catalog_name}public."SDS" s 
                 ON t."SD_ID" = s."SD_ID"
