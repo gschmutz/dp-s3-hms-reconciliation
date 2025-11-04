@@ -47,10 +47,10 @@ DRY_RUN = get_param('DRY_RUN', 'true').lower() in ('true', '1', 't')
 # either postgresql or trino
 HMS_VERSION = get_param('HMS_VERSION', '3')                       # either "3" or "4"
 
-HMS_HOST = get_param('HMS_HOST', 'hive-metastore')
-HMS_PORT = get_param('HMS_PORT', '10000')
-HMS_USER = get_credential('HMS_USER', 'hive')
-HMS_PASSWORD = get_credential('HMS_PASSWORD', 'abc123!')
+HIVE_SERVER_HOST = get_param('HIVE_SERVER_HOST', 'hive')
+HIVE_SERVER_PORT = get_param('HIVE_SERVER_PORT', '10000')
+HIVE_SERVER_USER = get_credential('HIVE_SERVER_USER', 'hive')
+HIVE_SERVER_PASSWORD = get_credential('HIVE_SERVER_PASSWORD', 'abc123!')
 
 HMS_DB_ACCESS_STRATEGY = get_param('HMS_DB_ACCESS_STRATEGY', 'postgresql')
 
@@ -101,9 +101,6 @@ if TRINO_USE_SSL:
     trino_url = f'{trino_url}?protocol=https&verify=false'
 
 trino_engine = create_engine(trino_url)
-
-# Create a session and S3 client
-s3 = boto3.client('s3')
 
 # Create S3 client configuration
 s3_config = {"service_name": "s3"}
@@ -197,7 +194,7 @@ def test_repair_trino(table: pd.Series):
 @pytest.mark.skipif(not HMS_VERSION == "3", reason="Not HMS version 3.x")
 @pytest.mark.parametrize("table", filtered_tables.iterrows())
 def test_repair_hive(table: pd.Series):
-    conn = hive.Connection(host=HMS_HOST, port=HMS_PORT, database="default")
+    conn = hive.Connection(host=HIVE_SERVER_HOST, port=HIVE_SERVER_PORT, database="default")
 
     table_name = table[1]["TBL_NAME"]
     database = table[1]["DATABASE_NAME"]
