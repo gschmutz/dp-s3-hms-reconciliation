@@ -89,6 +89,9 @@ KAFKA_SSL_KEY_PASSWORD = get_credential('KAFKA_SSL_KEY_PASSWORD', '<PASSWORD_NOT
 KAFKA_SASL_USERNAME = get_credential('KAFKA_SASL_USERNAME', '<USERNAME_NOT_SET>')
 KAFKA_SASL_PASSWORD = get_credential('KAFKA_SASL_PASSWORD', '<PASSWORD_NOT_SET>')
 KAFKA_TOPIC_NAME = get_param('KAFKA_TOPIC_NAME', 'dpraw_execution_status_log_v1')
+
+SCHEMA_REGISTRY_URL =  get_param('SCHEMA_REGISTRY_URL', 'http://localhost:8081')
+SCHEMA_REGISTRY_SSL_CA_LOCATION = get_param('SCHEMA_REGISTRY_SSL_CA_LOCATION', '/path/to/ca.pem')
  
 # Connect to MinIO or AWS S3
 ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
@@ -125,8 +128,8 @@ s3 = boto3.client(**s3_config)
  
 # Schema Registry
 schema_registry_configuration_confluent = {
-    'url': get_param('SCHEMA_REGISTRY_URL', 'http://localhost:8081'),
-    'ssl.ca.location': get_param('SCHEMA_REGISTRY_SSL_CA_LOCATION', '/path/to/ca.pem')
+    'url': SCHEMA_REGISTRY_URL,
+    'ssl.ca.location': SCHEMA_REGISTRY_SSL_CA_LOCATION
 }
 
 # Kafka Consumer config
