@@ -54,7 +54,6 @@ from util import get_param, get_credential, get_zone_name, get_s3_location_list,
 
 from typing import Optional
 
- 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -416,10 +415,10 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
                 data:dict = avro_deserializer(msg.value(), None)
  
                 # find the post_create_table_metric job
-                if data["steps"] and "post_create_table_metric" in data["steps"]:
+                if data and data["steps"] and "post_create_table_metric" in data["steps"]:
                     post_create_table_metric_step: dict = data["steps"]["post_create_table_metric"]
 
-                    if "job_outcome" in post_create_table_metric_step and post_create_table_metric_step["job_outcome"] == "SUCCESS":                   
+                    if post_create_table_metric_step and "job_outcome" in post_create_table_metric_step and post_create_table_metric_step["job_outcome"] == "SUCCESS":                   
                         metric: dict = json.loads(post_create_table_metric_step["job_exit_message"])
  
                         object = f"{metric.get('catalog')}.{metric.get('schema')}.{metric.get('table_name')}"
