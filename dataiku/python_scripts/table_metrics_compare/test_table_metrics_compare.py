@@ -246,7 +246,7 @@ def get_actual_row_count(table: str, timestamp_column: Optional[str] = None, bas
             query = text(
                 f'''
                 SELECT
-                    COUNT(*) AS count
+                    COUNT(*) AS row_count
                 FROM {table}
                 '''
             )
@@ -254,7 +254,7 @@ def get_actual_row_count(table: str, timestamp_column: Optional[str] = None, bas
             query = text(
                 f'''
                 SELECT
-                    COUNT(*) AS count
+                    COUNT(*) AS row_count
                 FROM {table}
                 WHERE {timestamp_column} <= from_unixtime({baseline_timestamp} / 1000 + 1)
                 '''
@@ -458,7 +458,9 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
                                 latest_values[key] = {
                                     'timestamp': timestamp,
                                     'timestamp_column': metric.get('timestamp_column', None),
-                                    'count': metric.get('count', 0),
+                                    'row_count': metric.get('row_count', 0),
+                                    'partition_count': metric.get('partition_count', 0),
+                                    'partition_fingerprint': metric.get('partition_fingerprint', ''),
                                     'table_name': metric.get('table_name', None),
                                     'database_name': metric.get('schema', None)
                                 }
