@@ -46,6 +46,8 @@ from sqlalchemy import create_engine,text,inspect
 from confluent_kafka import Consumer, KafkaError, TopicPartition, OFFSET_BEGINNING
 from confluent_kafka.deserializing_consumer import DeserializingConsumer
 from confluent_kafka.serialization import SerializationContext, MessageField, StringDeserializer, Deserializer
+from confluent_kafka.schema_registry import SchemaRegistryClient
+from confluent_kafka.schema_registry.avro import AvroDeserializer   
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from util import get_param, get_credential, get_zone_name, get_s3_location_list, replace_vars_in_string
 
@@ -118,6 +120,12 @@ if ENDPOINT_URL:
 
 s3 = boto3.client(**s3_config)
  
+# Schema Registry
+schema_registry_configuration_confluent = {
+    'url': get_param('SCHEMA_REGISTRY_URL', 'http://localhost:8081'),
+    'ssl.ca.location': get_param('SCHEMA_REGISTRY_SSL_CA_LOCATION', '/path/to/ca.pem')
+}
+
 # Kafka Consumer config
 consumer_conf_ssl = {
     'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
@@ -186,7 +194,7 @@ def is_column_name_part_of_table(column_name: str, table: str) -> bool:
         columns = [col['name'] for col in inspector.get_columns(table_name, schema)]
         return column_name in columns
  
-def get_actual_count(table: str, timestamp_column: Optional[str] = None, baseline_timestamp: Optional[int] = None) -> int:
+def get_actual_row_count(table: str, timestamp_column: Optional[str] = None, baseline_timestamp: Optional[int] = None) -> int:
     """
     Retrieve the count of rows from a specified table over Trino, optionally filtered by a timestamp column and baseline timestamp.
     Please define the various environment variables for the connection to Trino including the catalog and schema.
@@ -280,6 +288,10 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
     else:
         consumer = Consumer(consumer_conf_plaintext)
  
+    schema_registry = SchemaRegistryClient(schema_registry_configuration_confluent)
+    string_deserializer = StringDeserializer('utf_8')
+    avro_deserializer = AvroDeserializer(schema_registry)
+
     topic = KAFKA_TOPIC_NAME
  
     # Fetch metadata to get partition info
@@ -326,7 +338,7 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
             else:
                 eof_count = 0
                 # deserialize
-                data:dict = json.loads(msg.value().decode("utf-8"))
+                data:dict = avro_deserializer(msg.value(), None)
  
                 # find the post_create_table_metric job
                 if data["steps"] and "post_create_table_metric" in data["steps"]:
@@ -422,10 +434,10 @@ def test_value_compare(fully_qualified_table_name):
     Raises:
         AssertionError: If the baseline count does not match the actual count for the given table.
     """
-    baseline_count = get_baseline(fully_qualified_table_name)['count']
+    baseline_row_count = get_baseline(fully_qualified_table_name)['row_count']
     timestamp_column = get_baseline(fully_qualified_table_name)['timestamp_column']
     event_time = get_baseline(fully_qualified_table_name)['timestamp']
-    actual_count = get_actual_count(fully_qualified_table_name, timestamp_column=timestamp_column, baseline_timestamp=event_time)
+    actual_row_count = get_actual_row_count(fully_qualified_table_name, timestamp_column=timestamp_column, baseline_timestamp=event_time)
  
-    assert baseline_count == actual_count, f"Mismatch in table '{fully_qualified_table_name}': Baseline Count from last job processing ({baseline_count}) at timestamp ({timestamp_column}={event_time}) does not match actual count retrieved from Trino ({actual_count})"
+    assert baseline_row_count == actual_row_count, f"Mismatch in table '{fully_qualified_table_name}': Baseline Row Count from last job processing ({baseline_row_count}) at timestamp ({timestamp_column}={event_time}) does not match actual count retrieved from Trino ({actual_row_count})"
  

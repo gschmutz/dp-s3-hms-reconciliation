@@ -8,6 +8,10 @@ pytest-md
 pandas
 boto3
 confluent-kafka
+fastavro 
+httpx
+authlib
+requests
 pyhive
 thriftpy2
 thrift
