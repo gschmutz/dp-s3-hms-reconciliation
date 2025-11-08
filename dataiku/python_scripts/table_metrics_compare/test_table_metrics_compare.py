@@ -475,7 +475,7 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
     finally:
         consumer.close()
         for table, values in latest_values.items():
-            logger.info(f"Table: {table}, Values: {values['timestamp']}, {values['count']}, {values['timestamp_column']}")
+            logger.info(f"Table: {table}, Values: {values['timestamp']}, {values['row_count']}, {values['timestamp_column']}")
         #logger.info(f"init_actual_values_from_kafka() completed. Found {len(latest_values)} tables: {list(latest_values.keys())}")
     return latest_values
 
