@@ -32,6 +32,7 @@ Usage:
 
 TODO: run in batches
 """
+import hashlib
 import pytest
 import os
 import io
@@ -76,7 +77,9 @@ TRINO_HOST = get_param('TRINO_HOST', 'localhost')
 TRINO_PORT = get_param('TRINO_PORT', '28082')
 TRINO_CATALOG = get_param('TRINO_CATALOG', 'minio')
 TRINO_USE_SSL = get_param('TRINO_USE_SSL', 'true').lower() in ('true', '1', 't')
- 
+
+HMS_TRINO_CATALOG = get_param('HMS_TRINO_CATALOG', 'minio')
+
 KAFKA_BOOTSTRAP_SERVERS = get_param('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
 KAFKA_SECURITY_PROTOCOL = get_param('KAFKA_SECURITY_PROTOCOL', 'PLAINTEXT')
 KAFKA_SSL_CA_LOCATION = get_param('KAFKA_SSL_CA_LOCATION', '/path/to/ca.pem')
@@ -193,7 +196,24 @@ def is_column_name_part_of_table(column_name: str, table: str) -> bool:
             catalog = None
         columns = [col['name'] for col in inspector.get_columns(table_name, schema)]
         return column_name in columns
- 
+
+def create_fingerprint(partitions: str) -> str:
+    """
+    Create a fingerprint string from a comma-separated list of partition names.
+    
+    Args:
+        partitions (str): Comma-separated list of partition names.
+        
+    Returns:
+        str: A fingerprint string representing the partitions.
+    """
+    partition_fingerprint = ""
+    if partitions:
+        partition_fingerprint = hashlib.sha256(
+            partitions.encode('utf-8')
+        ).hexdigest()
+    return partition_fingerprint
+
 def get_actual_row_count(table: str, timestamp_column: Optional[str] = None, baseline_timestamp: Optional[int] = None) -> int:
     """
     Retrieve the count of rows from a specified table over Trino, optionally filtered by a timestamp column and baseline timestamp.
@@ -246,6 +266,58 @@ def get_actual_row_count(table: str, timestamp_column: Optional[str] = None, bas
             count = None
     return count
 
+def get_actual_partition_metrics(table_name: str, database_name: str, hmsdb_catalog_name: str, baseline_timestamp: Optional[int] = None) -> tuple[int, str]:
+    """
+    Returns partition count and partition list for a given table.
+    
+    Returns:
+        tuple[int, str]: A tuple containing (partition_count, partition_list)
+    """
+
+    with trino_engine.connect() as conn:
+        query = text(
+            f' SELECT d."NAME" as database_name,'
+            f'   t."TBL_NAME" as table_name,'
+            f'   t."TBL_TYPE" as table_type,'
+            f"   CASE"
+            f"      WHEN COALESCE(pk.has_partitions, 0) >= 1 then 'Y'"
+            f"      ELSE 'N'"
+            f"   END as has_partitions,"
+            f'   COUNT(p."PART_ID") as partition_count,'
+            f'   ARRAY_JOIN(ARRAY_AGG(p."PART_NAME" ORDER BY p."PART_ID"), \',\') as partition_list'
+            f' FROM {hmsdb_catalog_name}.public."TBLS" t'
+            f' JOIN {hmsdb_catalog_name}.public."DBS" d'
+            f'   ON t."DB_ID" = d."DB_ID"'
+            f" LEFT JOIN ("
+            f'   SELECT pk."TBL_ID",'
+            f"      GREATEST(SIGN(COUNT(*)), 0) as has_partitions"
+            f'   FROM {hmsdb_catalog_name}.public."PARTITION_KEYS" pk'
+            f'   GROUP BY pk."TBL_ID"'
+            f' ) pk ON t."TBL_ID" = pk."TBL_ID"'
+            f' LEFT JOIN {hmsdb_catalog_name}.public."PARTITIONS" p '
+            f'   ON t."TBL_ID" = p."TBL_ID"'
+            f" WHERE LOWER(t.\"TBL_NAME\") = LOWER('{table_name}')"
+            f" AND LOWER(d.\"NAME\") = LOWER('{database_name}')"
+            f' GROUP BY d."NAME",'
+            f'   t."TBL_NAME",'
+            f'   t."TBL_TYPE",'
+            f"   pk.has_partitions"
+        )
+
+        logger.debug(f"Executing query: {query}")
+        try:
+            result = conn.execute(query).fetchone()
+            if result:
+                partition_count = result[4]  # partition_count column
+                partition_list = result[5] or ""  # partition_list column, default to empty string if None
+                partition_fingerprint = create_fingerprint(partition_list)
+                return partition_count, partition_fingerprint
+            else:
+                return -1, ""
+        except Exception as e:
+            logger.error(f"Error executing query for table '{table_name}': {str(e)}")
+            return -1, ""
+        
 def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_schema: Optional[str] = None, filter_tables: Optional[str] = None, filter_batch: Optional[str] = None, filter_stage: Optional[str] = None) -> dict:
     """
         Initializes and returns the latest actual table metric values by consuming messages from a Kafka topic.
@@ -385,7 +457,8 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
                                     'timestamp': timestamp,
                                     'timestamp_column': metric.get('timestamp_column', None),
                                     'count': metric.get('count', 0),
-                                    'table_name': metric.get('table_name', key)
+                                    'table_name': metric.get('table_name', None),
+                                    'database_name': metric.get('schema', None)
                                 }
                                 logger.debug(f"Updated latest value for {key}: {latest_values[key]}")
                             else:
@@ -419,20 +492,20 @@ def test_trino_availability():
             assert False
  
 @pytest.mark.parametrize("fully_qualified_table_name", fully_qualified_table_names)
-def test_value_compare(fully_qualified_table_name):
+def test_row_count_compare(fully_qualified_table_name):
     """
-    Test function to compare the value counts between baseline and actual data for a given table.
+    Test function to compare the row counts between baseline and actual data for a given table.
  
     This test is parameterized to run for each table in the `tables` list. For each table:
-    - Retrieves the baseline count, timestamp column, and event time using `get_baseline`.
-    - Retrieves the actual count from the target data source using `get_actual_count`, filtered by the timestamp column and baseline timestamp.
+    - Retrieves the baseline row count, timestamp column, and event time using `get_baseline`.
+    - Retrieves the actual row count from the target data source using `get_actual_row_count`, filtered by the timestamp column and baseline timestamp.
     - Asserts that the baseline and actual counts are equal, raising an assertion error with a descriptive message if they do not match.
  
     Args:
         table (str): The name of the table to compare.
  
     Raises:
-        AssertionError: If the baseline count does not match the actual count for the given table.
+        AssertionError: If the baseline count does not match the actual row count for the given table.
     """
     baseline_row_count = get_baseline(fully_qualified_table_name)['row_count']
     timestamp_column = get_baseline(fully_qualified_table_name)['timestamp_column']
@@ -440,4 +513,30 @@ def test_value_compare(fully_qualified_table_name):
     actual_row_count = get_actual_row_count(fully_qualified_table_name, timestamp_column=timestamp_column, baseline_timestamp=event_time)
  
     assert baseline_row_count == actual_row_count, f"Mismatch in table '{fully_qualified_table_name}': Baseline Row Count from last job processing ({baseline_row_count}) at timestamp ({timestamp_column}={event_time}) does not match actual count retrieved from Trino ({actual_row_count})"
+
+@pytest.mark.parametrize("fully_qualified_table_name", fully_qualified_table_names)
+def test_partition_count_compare(fully_qualified_table_name):
+    """
+    Test function to compare the partition counts between baseline and actual data for a given table.
  
+    This test is parameterized to run for each table in the `tables` list. For each table:
+    - Retrieves the baseline partition count, timestamp column, and event time using `get_baseline`.
+    - Retrieves the actual partition count from the target data source using `get_actual_partition_metrics`, filtered by the timestamp column and baseline timestamp.
+    - Asserts that the baseline and actual partition counts are equal, raising an assertion error with a descriptive message if they do not match.
+ 
+    Args:
+        table (str): The name of the table to compare.
+ 
+    Raises:
+        AssertionError: If the baseline count does not match the actual partition count for the given table.
+    """
+    table_name = get_baseline(fully_qualified_table_name)['table_name']
+    database_name = get_baseline(fully_qualified_table_name)['database_name']
+
+    baseline_partition_count = get_baseline(fully_qualified_table_name)['partition_count']
+    timestamp_column = get_baseline(fully_qualified_table_name)['timestamp_column']
+    event_time = get_baseline(fully_qualified_table_name)['timestamp']
+    
+    actual_partition_count, actual_partition_fingerprint = get_actual_partition_metrics(table_name=table_name, database_name=database_name, hmsdb_catalog_name="postgres", baseline_timestamp=event_time)
+
+    assert baseline_partition_count == actual_partition_count, f"Mismatch in table '{fully_qualified_table_name}': Baseline Partition Count from last job processing ({baseline_partition_count}) at timestamp ({timestamp_column}={event_time}) does not match actual count retrieved from Trino ({actual_partition_count})"
