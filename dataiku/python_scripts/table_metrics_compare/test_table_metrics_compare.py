@@ -519,13 +519,13 @@ def test_row_count_compare(fully_qualified_table_name):
     assert baseline_row_count == actual_row_count, f"Mismatch in table '{fully_qualified_table_name}': Baseline Row Count from last job processing ({baseline_row_count}) at timestamp ({timestamp_column}={event_time}) does not match actual count retrieved from Trino ({actual_row_count})"
 
 @pytest.mark.parametrize("fully_qualified_table_name", fully_qualified_table_names)
-def test_partition_count_compare(fully_qualified_table_name):
+def test_partition_compare(fully_qualified_table_name):
     """
-    Test function to compare the partition counts between baseline and actual data for a given table.
+    Test function to compare the partition counts and fingerprints between baseline and actual data for a given table.
  
     This test is parameterized to run for each table in the `tables` list. For each table:
-    - Retrieves the baseline partition count, timestamp column, and event time using `get_baseline`.
-    - Retrieves the actual partition count from the target data source using `get_actual_partition_metrics`, filtered by the timestamp column and baseline timestamp.
+    - Retrieves the baseline partition count and fingerprint, timestamp column, and event time using `get_baseline`.
+    - Retrieves the actual partition count and fingerprint from the target data source using `get_actual_partition_metrics`, filtered by the timestamp column and baseline timestamp.
     - Asserts that the baseline and actual partition counts are equal, raising an assertion error with a descriptive message if they do not match.
  
     Args:
@@ -538,9 +538,11 @@ def test_partition_count_compare(fully_qualified_table_name):
     database_name = get_baseline(fully_qualified_table_name)['database_name']
 
     baseline_partition_count = get_baseline(fully_qualified_table_name)['partition_count']
+    baseline_partition_fingerprint = get_baseline(fully_qualified_table_name)['partition_fingerprint']
     timestamp_column = get_baseline(fully_qualified_table_name)['timestamp_column']
     event_time = get_baseline(fully_qualified_table_name)['timestamp']
     
     actual_partition_count, actual_partition_fingerprint = get_actual_partition_metrics(table_name=table_name, database_name=database_name, hmsdb_catalog_name="postgres", baseline_timestamp=event_time)
 
     assert baseline_partition_count == actual_partition_count, f"Mismatch in table '{fully_qualified_table_name}': Baseline Partition Count from last job processing ({baseline_partition_count}) at timestamp ({timestamp_column}={event_time}) does not match actual count retrieved from Trino ({actual_partition_count})"
+    assert baseline_partition_fingerprint == actual_partition_fingerprint, f"Mismatch in table '{fully_qualified_table_name}': Baseline Partition Fingerprint from last job processing ({baseline_partition_fingerprint}) at timestamp ({timestamp_column}={event_time}) does not match actual fingerprint retrieved from Trino ({actual_partition_fingerprint})"
