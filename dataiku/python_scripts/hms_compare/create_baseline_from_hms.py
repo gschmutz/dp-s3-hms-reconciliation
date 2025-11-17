@@ -352,7 +352,7 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
             query = text(f"""
                 SELECT COUNT(*) AS row_count
                 , {hash_expr} AS fingerprint
-                {create_time_col_agg}
+                , {create_time_col_agg}
                 FROM (
                     SELECT {order_by_clause}
                     , {row_to_text_expr} AS row_text
