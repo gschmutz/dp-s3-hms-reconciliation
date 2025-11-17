@@ -289,10 +289,10 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
     with src_engine.connect() as conn:
 
         print (conn.dialect.name)
-        # Step 1: Get primary key columns
+        # Step 1: Get all columns
         all_columns = get_columns(engine=src_engine, catalog_name=catalog_name, table=table, schema=schema)
         #print(all_columns)
-        pk_columns = [all_columns[0]]  # assume first column is PK if no PK defined in HMS
+        pk_columns = all_columns  # we use all columns as "pk" so that it is always ordered by all values of the row
         if not pk_columns:
             print(f"No primary key found for table {schema}.{table}")
         else:
