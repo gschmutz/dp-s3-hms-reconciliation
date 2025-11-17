@@ -74,6 +74,7 @@ S3_ADMIN_BUCKET = replace_vars_in_string(S3_ADMIN_BUCKET, { "zone": ZONE.upper()
 S3_ADMIN_BUCKET_PREFIX = get_param('S3_ADMIN_BUCKET_PREFIX', '')
 S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
 S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "admin_bucket_prefix": S3_ADMIN_BUCKET_PREFIX, "database": FILTER_DATABASE.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
+S3_LOCATION_LIST_FILE_NAME = S3_LOCATION_LIST_OBJECT_NAME.replace("/", "__")  # Local file name to avoid directory issues
 
 # Setup connections to the metadatastore, either directly to postgresql or via trino
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
@@ -240,7 +241,7 @@ def get_s3_locations_with_batches(batching_strategy: str="", number_of_batches: 
 
         return s3_locations
 
-with open(S3_LOCATION_LIST_OBJECT_NAME, "w") as f:
+with open(S3_LOCATION_LIST_FILE_NAME, "w") as f:
     # Print CSV header
     print("fully_qualified_table_name,database_name,table_name,table_type,s3_location,has_partitions,partition_count,last_create_time,batch,stage", file=f)
                 
@@ -252,12 +253,12 @@ with open(S3_LOCATION_LIST_OBJECT_NAME, "w") as f:
 
 # upload the file to S3 to make it available
 if S3_UPLOAD_ENABLED:
-    logger.info(f"Uploading {S3_LOCATION_LIST_OBJECT_NAME} to s3://{S3_ADMIN_BUCKET}/{S3_LOCATION_LIST_OBJECT_NAME}")
+    logger.info(f"Uploading {S3_LOCATION_LIST_FILE_NAME} to s3://{S3_ADMIN_BUCKET}/{S3_LOCATION_LIST_OBJECT_NAME}")
     
-    s3.upload_file(S3_LOCATION_LIST_OBJECT_NAME, S3_ADMIN_BUCKET, S3_LOCATION_LIST_OBJECT_NAME)
+    s3.upload_file(S3_LOCATION_LIST_FILE_NAME, S3_ADMIN_BUCKET, S3_LOCATION_LIST_OBJECT_NAME)
 
 # create summary
-df = pd.read_csv(S3_LOCATION_LIST_OBJECT_NAME)
+df = pd.read_csv(S3_LOCATION_LIST_FILE_NAME)
 summary = (
     df.groupby("stage")
       .agg(

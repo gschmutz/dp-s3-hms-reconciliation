@@ -93,7 +93,6 @@ HMS_CREATE_BASELINE_FLAG = get_param('HMS_CREATE_BASELINE_FLAG', 'hms_db_backup_
 HMS_BASELINE_OBJECT_NAME = get_param('HMS_BASELINE_OBJECT_NAME', 'baseline_hms.csv')
 HMS_RECOVERED_OBJECT_NAME = get_param('HMS_RECOVERED_OBJECT_NAME', 'recovered_hms.csv')
 
-
 HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "admin_bucket_prefix": S3_ADMIN_BUCKET_PREFIX, "zone": ZONE, "env": ENV } )
 HMS_RECOVERED_OBJECT_NAME = replace_vars_in_string(HMS_RECOVERED_OBJECT_NAME, { "admin_bucket_prefix": S3_ADMIN_BUCKET_PREFIX, "zone": ZONE, "env": ENV } )
 
