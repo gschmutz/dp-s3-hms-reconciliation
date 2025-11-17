@@ -314,7 +314,7 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
                                 md5(
                                     CAST(
                                         array_join(
-                                            array_agg(to_hex(md5(CAST(row_text AS varbinary))) ORDER BY {order_by_clause}),
+                                            array_agg(to_hex(md5(CAST(t.row_text AS varbinary))) ORDER BY {order_by_clause}),
                                             ''
                                         ) AS varbinary
                                     )
@@ -328,21 +328,21 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
             if "PART_ID".lower() in all_columns:
                 create_time_table_join = f"LEFT JOIN {catalog_name}public.\"PARTITIONS\" ct ON ct.\"PART_ID\" = t.\"PART_ID\""
                 create_time_col = f'ct."CREATE_TIME" AS create_time'
-                create_time_col_agg = f'COALESCE(MAX(create_time), 0) AS max_create_time'
+                create_time_col_agg = f'COALESCE(MAX(t.create_time), 0) AS max_create_time'
             elif "TBL_ID".lower() in all_columns:
                 create_time_table_join = f"LEFT JOIN {catalog_name}public.\"TBLS\" ct ON ct.\"TBL_ID\" = t.\"TBL_ID\""
                 create_time_col = f'ct."CREATE_TIME" AS create_time'
-                create_time_col_agg = f'COALESCE(MAX(create_time), 0) AS max_create_time'
+                create_time_col_agg = f'COALESCE(MAX(t.create_time), 0) AS max_create_time'
             # DBS only has a create_time column in HMS 4.x
             #elif "DB_ID".lower() in all_columns:
             #    create_time_table_join = f"LEFT JOIN {catalog_name}public.\"DBS\" ct ON ct.\"DB_ID\" = t.\"DB_ID\""
-            #    create_time_col = f', ct."CREATE_TIME" AS create_time'
-            #    create_time_col_alias = f', MAX(create_time) AS max_create_time'
+            #    create_time_col = f'ct."CREATE_TIME" AS create_time'
+            #    create_time_col_alias = f'MAX(t.create_time) AS max_create_time'
             # CTLGS only has a create_time column in HMS 4.x
             #elif "CTLGS_ID".lower() in all_columns:
             #    create_time_table_join = f"LEFT JOIN {catalog_name}public.\"CTLGS\" ct ON ct.\"CTLGS_ID\" = t.\"CTLGS_ID\""
-            #    create_time_col = f', ct."CREATE_TIME" AS create_time'
-            #    create_time_col_alias = f', MAX(create_time) AS max_create_time'
+            #    create_time_col = f'ct."CREATE_TIME" AS create_time'
+            #    create_time_col_alias = f'MAX(t.create_time) AS max_create_time'
 
             timestamp_where_clause = ""
             if filter_timestamp and create_time_col:
@@ -361,7 +361,7 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
                     {create_time_table_join}
                     {timestamp_where_clause}
                     ORDER BY {order_by_clause}
-                ) AS subquery  
+                ) AS t  
             """)
 
             if (table == 'partitions'):
