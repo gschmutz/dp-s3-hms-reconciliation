@@ -85,6 +85,8 @@ AWS_ACCESS_KEY = get_credential('AWS_ACCESS_KEY', 'admin')
 AWS_SECRET_ACCESS_KEY = get_credential('AWS_SECRET_ACCESS_KEY', 'abc123abc123')
 
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
+S3_ADMIN_BUCKET = replace_vars_in_string(S3_ADMIN_BUCKET, { "zone": ZONE.upper(), "env": ENV.upper() } )
+S3_ADMIN_BUCKET_PREFIX = get_param('S3_ADMIN_BUCKET_PREFIX', '')
 S3_POLLING_INTERVAL = get_param('S3_POLLING_INTERVAL', '60')
 
 HMS_CREATE_BASELINE_FLAG = get_param('HMS_CREATE_BASELINE_FLAG', 'hms_db_backup_flag.csv')
@@ -92,8 +94,8 @@ HMS_BASELINE_OBJECT_NAME = get_param('HMS_BASELINE_OBJECT_NAME', 'baseline_hms.c
 HMS_RECOVERED_OBJECT_NAME = get_param('HMS_RECOVERED_OBJECT_NAME', 'recovered_hms.csv')
 
 
-HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "zone": ZONE, "env": ENV } )
-HMS_RECOVERED_OBJECT_NAME = replace_vars_in_string(HMS_RECOVERED_OBJECT_NAME, { "zone": ZONE, "env": ENV } )
+HMS_BASELINE_OBJECT_NAME = replace_vars_in_string(HMS_BASELINE_OBJECT_NAME, { "admin-bucket-prefix": S3_ADMIN_BUCKET_PREFIX, "zone": ZONE, "env": ENV } )
+HMS_RECOVERED_OBJECT_NAME = replace_vars_in_string(HMS_RECOVERED_OBJECT_NAME, { "admin-bucket-prefix": S3_ADMIN_BUCKET_PREFIX, "zone": ZONE, "env": ENV } )
 
 if HMS_DB_ACCESS_STRATEGY.lower() == 'postgresql':
     # Construct connection URLs
