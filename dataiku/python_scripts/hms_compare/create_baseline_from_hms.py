@@ -76,7 +76,7 @@ S3_ADMIN_BUCKET_PREFIX = get_param('S3_ADMIN_BUCKET_PREFIX', '')
 S3_POLLING_INTERVAL = get_param('S3_POLLING_INTERVAL', '10')
 
 HMS_CREATE_BASELINE_FLAG = get_param('HMS_CREATE_BASELINE_FLAG', 'hms_db_backup_flag.csv')
-HMS_CREATE_BASELINE_FLAG = replace_vars_in_string(HMS_CREATE_BASELINE_FLAG, {"admin-bucket-prefix": S3_ADMIN_BUCKET_PREFIX, "zone": ZONE, "env": ENV } )
+HMS_CREATE_BASELINE_FLAG = replace_vars_in_string(HMS_CREATE_BASELINE_FLAG, {"admin_bucket_prefix": S3_ADMIN_BUCKET_PREFIX, "zone": ZONE, "env": ENV } )
 HMS_BASELINE_OBJECT_NAME = get_param('HMS_BASELINE_OBJECT_NAME', 'baseline_hms.csv')
 HMS_RECOVERED_OBJECT_NAME = get_param('HMS_RECOVERED_OBJECT_NAME', '')
 

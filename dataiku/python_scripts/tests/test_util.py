@@ -5,10 +5,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from util import replace_vars_in_string
 
 def test_replace_single_variable():
-    s = "file_{database}.csv"
-    variables = {"database": "testdb"}
+    s = "{admin_bucket_prefix}/file_{database}.csv"
+    variables = {"admin_bucket_prefix": "prefix", "database": "testdb"}
     result = replace_vars_in_string(s, variables)
-    assert result == "file_testdb.csv"
+    assert result == "prefix/file_testdb.csv"
 
 def test_replace_multiple_variables():
     s = "s3://{bucket}/{database}/{table}.csv"
