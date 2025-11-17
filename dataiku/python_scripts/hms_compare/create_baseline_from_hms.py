@@ -309,30 +309,30 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
                 format_args = ",".join([f"CAST(t.{quote_ident(col, dialect=conn.dialect)} AS varchar)" for col in all_columns])
                 format_str = ",".join(["%s"] * len(all_columns))
                 row_to_text_expr = f"format('{format_str}', {format_args})"
-                hash_expr = """to_hex(
+                order_by_clause = ", ".join("t." + quote_ident(col,dialect=conn.dialect) for col in pk_columns)
+                hash_expr = f"""to_hex(
                                 md5(
                                     CAST(
                                         array_join(
-                                            array_agg(to_hex(md5(CAST(row_text AS varbinary)))),
+                                            array_agg(to_hex(md5(CAST(row_text AS varbinary))) ORDER BY {order_by_clause}),
                                             ''
                                         ) AS varbinary
                                     )
                                 )
                             )
                             """
-                order_by_clause = ", ".join("t." + quote_ident(col,dialect=conn.dialect) for col in pk_columns)
 
             create_time_table_join = ""
             create_time_col = ""
             create_time_col_agg = ""
             if "PART_ID".lower() in all_columns:
                 create_time_table_join = f"LEFT JOIN {catalog_name}public.\"PARTITIONS\" ct ON ct.\"PART_ID\" = t.\"PART_ID\""
-                create_time_col = f', ct."CREATE_TIME" AS create_time'
-                create_time_col_agg = f', COALESCE(MAX(create_time), 0) AS max_create_time'
+                create_time_col = f'ct."CREATE_TIME" AS create_time'
+                create_time_col_agg = f'COALESCE(MAX(create_time), 0) AS max_create_time'
             elif "TBL_ID".lower() in all_columns:
                 create_time_table_join = f"LEFT JOIN {catalog_name}public.\"TBLS\" ct ON ct.\"TBL_ID\" = t.\"TBL_ID\""
-                create_time_col = f', ct."CREATE_TIME" AS create_time'
-                create_time_col_agg = f', COALESCE(MAX(create_time), 0) AS max_create_time'
+                create_time_col = f'ct."CREATE_TIME" AS create_time'
+                create_time_col_agg = f'COALESCE(MAX(create_time), 0) AS max_create_time'
             # DBS only has a create_time column in HMS 4.x
             #elif "DB_ID".lower() in all_columns:
             #    create_time_table_join = f"LEFT JOIN {catalog_name}public.\"DBS\" ct ON ct.\"DB_ID\" = t.\"DB_ID\""
@@ -354,8 +354,9 @@ def generate_baseline_for_table(engine, table: str, schema: str = "public", filt
                 , {hash_expr} AS fingerprint
                 {create_time_col_agg}
                 FROM (
-                    SELECT {row_to_text_expr} AS row_text
-                    {create_time_col}
+                    SELECT {order_by_clause}
+                    , {row_to_text_expr} AS row_text
+                    , {create_time_col}
                     FROM {catalog_name}{full_table} t
                     {create_time_table_join}
                     {timestamp_where_clause}
