@@ -68,8 +68,8 @@ FILTER_TABLES = get_param('FILTER_TABLES', "")
 FILTER_BATCH = get_param('FILTER_BATCH', "")                    # either all or a specific batch number, if empty it will not use the batch filter at all
 FILTER_STAGE = get_param('FILTER_STAGE', "")                    # either all or a specific stage number, if empty it will not use the stage filter at all
 
-RESTORE_TARGET_TIMESTAMP_MS = get_param('RESTORE_TARGET_TIMESTAMP_MS', None)  # if set will be used to restore the baseline counts from Kafka at a specific point in time (unix timestamp in milliseconds)
- 
+USE_TARGET_TIMESTAMP_FROM_RECOVERY_INFO = get_param('USE_TARGET_TIMESTAMP_FROM_RECOVERY_INFO', 'false').lower() in ('true', '1', 't')
+
 TRINO_USER = get_credential('TRINO_USER', 'trino')
 TRINO_PASSWORD = get_credential('TRINO_PASSWORD', '')
 TRINO_HOST = get_param('TRINO_HOST', 'localhost')
@@ -97,6 +97,9 @@ ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
 S3_ADMIN_BUCKET = replace_vars_in_string(S3_ADMIN_BUCKET, { "zone": ZONE.upper(), "env": ENV.upper() } )
 S3_ADMIN_BUCKET_PREFIX = get_param('S3_ADMIN_BUCKET_PREFIX', '')
+
+RECOVERY_INFO_OBJECT_NAME = get_param('RECOVERY_INFO_OBJECT_NAME', 'recovery_info.csv')
+RECOVERY_INFO_OBJECT_NAME = replace_vars_in_string(RECOVERY_INFO_OBJECT_NAME, { "admin_bucket_prefix": S3_ADMIN_BUCKET_PREFIX, "database": FILTER_SCHEMA.upper(), "schema": FILTER_SCHEMA.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
 
 S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
 S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "admin_bucket_prefix": S3_ADMIN_BUCKET_PREFIX, "database": FILTER_SCHEMA.upper(), "schema": FILTER_SCHEMA.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
@@ -169,6 +172,35 @@ consumer_conf_plaintext = {
  
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def get_target_timestamp_from_recovery_info(s3_client, s3_admin_bucket: str, recovery_info_object_name: str) -> int:
+    """
+    Retrieves the target timestamp from the recovery info stored in S3.
+
+    Args:
+        s3_client (boto3.client): The S3 client to use for accessing the bucket.
+        s3_admin_bucket (str): The name of the S3 admin bucket.
+        recovery_info_object_name (str): The name of the recovery info object in S3.
+
+    Returns:
+        int: The target timestamp in milliseconds, or the current time if not found.
+    """
+    recovery_info_object_key = f"{recovery_info_object_name}"
+    
+    response = s3_client.get_object(Bucket=s3_admin_bucket, Key=recovery_info_object_key)
+    body_str = response['Body'].read().decode('utf-8').strip()
+    lines = body_str.split('\n')
+    if len(lines) > 1:  # Ensure there's at least a header and one data row
+        first_data_line = lines[1].split(',')
+        if len(first_data_line) > 0:
+            target_timestamp_str = first_data_line[1].strip()
+        else:
+            raise ValueError("First data row is empty or malformed")
+    else:
+        raise ValueError("CSV file doesn't contain data rows")
+    target_timestamp_ms = int(target_timestamp_str)
+    logger.info(f"Retrieved target timestamp from recovery info: {target_timestamp_ms} ms")
+    return target_timestamp_ms
 
 def get_baseline(table):
     return latest_values[table]
@@ -352,8 +384,8 @@ def init_actual_values_from_kafka(filter_catalogs: Optional[str] = None, filter_
     s3_location_list = get_s3_location_list(s3, S3_ADMIN_BUCKET, S3_LOCATION_LIST_OBJECT_NAME, filter_batch, filter_stage)
 
     consume_until_timestamp_ms: int = int(time.time()) * 1000
-    if RESTORE_TARGET_TIMESTAMP_MS:
-        consume_until_timestamp_ms = int(RESTORE_TARGET_TIMESTAMP_MS)
+    if USE_TARGET_TIMESTAMP_FROM_RECOVERY_INFO:
+        consume_until_timestamp_ms = get_target_timestamp_from_recovery_info(s3, S3_ADMIN_BUCKET, RECOVERY_INFO_OBJECT_NAME)
 
     # read from kafka
     if KAFKA_SECURITY_PROTOCOL == 'SSL':
