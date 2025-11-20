@@ -126,7 +126,7 @@ def test_get_tables():
     conn.close()
 
 def test_create_table():
-    """Test disabled - uncomment to enable"""
+    """Test disabled - it is not possible to create the table via Trino."""
     pass
     
     # conn = getTrinoConnection()
