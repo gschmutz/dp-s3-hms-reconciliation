@@ -96,9 +96,10 @@ SCHEMA_REGISTRY_SSL_CA_LOCATION = get_param('SCHEMA_REGISTRY_SSL_CA_LOCATION', '
 ENDPOINT_URL = get_param('S3_ENDPOINT_URL', 'http://localhost:9000')
 S3_ADMIN_BUCKET = get_param('S3_ADMIN_BUCKET', 'admin-bucket')
 S3_ADMIN_BUCKET = replace_vars_in_string(S3_ADMIN_BUCKET, { "zone": ZONE.upper(), "env": ENV.upper() } )
+S3_ADMIN_BUCKET_PREFIX = get_param('S3_ADMIN_BUCKET_PREFIX', '')
 
 S3_LOCATION_LIST_OBJECT_NAME = get_param('S3_LOCATION_LIST_OBJECT_NAME', 's3_locations.csv')
-S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "database": FILTER_SCHEMA.upper(), "schema": FILTER_SCHEMA.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
+S3_LOCATION_LIST_OBJECT_NAME = replace_vars_in_string(S3_LOCATION_LIST_OBJECT_NAME, { "admin_bucket_prefix": S3_ADMIN_BUCKET_PREFIX, "database": FILTER_SCHEMA.upper(), "schema": FILTER_SCHEMA.upper(), "zone": ZONE.upper(), "env": ENV.upper() } )
 
 # Construct connection URLs
 trino_url = f'trino://{TRINO_USER}:{TRINO_PASSWORD}@{TRINO_HOST}:{TRINO_PORT}/{TRINO_CATALOG}'
@@ -494,7 +495,8 @@ def test_trino_availability():
         except Exception as e:
             logger.error(f"Trino connection failed: {str(e)}")
             assert False
- 
+
+@pytest.mark.row_count_compare 
 @pytest.mark.parametrize("fully_qualified_table_name", fully_qualified_table_names)
 def test_row_count_compare(fully_qualified_table_name):
     """
@@ -518,6 +520,7 @@ def test_row_count_compare(fully_qualified_table_name):
  
     assert baseline_row_count == actual_row_count, f"Mismatch in table '{fully_qualified_table_name}': Baseline Row Count from last job processing ({baseline_row_count}) at timestamp ({timestamp_column}={event_time}) does not match actual count retrieved from Trino ({actual_row_count})"
 
+@pytest.mark.partition_compare
 @pytest.mark.parametrize("fully_qualified_table_name", fully_qualified_table_names)
 def test_partition_compare(fully_qualified_table_name):
     """
