@@ -251,6 +251,9 @@ def send_reports(
 def upload_reports(project_basename, report_directory = None):
 
     # Environment variables
+    FILTER_STAGE = get_param('FILTER_STAGE', '')
+    if FILTER_STAGE:
+        FILTER_STAGE = f"-{FILTER_STAGE}"
     ALLURE_SERVER = get_param('ALLURE_REPORT_SERVER_URL', '')
     ALLURE_USER = get_credential('ALLURE_REPORT_USER', 'admin')
     ALLURE_PASSWORD = get_credential('ALLURE_REPORT_PASSWORD', 'admin')
@@ -265,8 +268,7 @@ def upload_reports(project_basename, report_directory = None):
     zone = get_zone_name()
     run_id = get_run_id()
     run_url = get_run_url()
-    project_id = f"{zone.lower()}-{project_basename}"
-
+    project_id = f"{zone.lower()}-{project_basename}{FILTER_STAGE}"
 
     if report_directory is None:
         report_directory = f"../../../../pytest-step-execute-tests/project-python-libs/GDP_RECONCILIATION_JOBS/report"
